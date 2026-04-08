@@ -6,6 +6,8 @@ export type ResourceRes = `res://${string}`;
 export interface Serializable {
   validate(): void;
   toTres(): string;
+  /** Instance hook delegates to \`static fromJSON\` on each implementation class. */
+  fromJSON(raw: string | unknown): Serializable;
 }
 
 export class ResourceTypeModifier implements Serializable {
@@ -16,6 +18,22 @@ export class ResourceTypeModifier implements Serializable {
     this.name = name;
     this.value = value;
     this.validate();
+  }
+
+  static fromJSON(raw: string | unknown): ResourceTypeModifier {
+    const o = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (o === null || typeof o !== 'object' || !('name' in o) || !('value' in o)) {
+      throw new Error('Invalid ResourceTypeModifier in JSON.');
+    }
+    const { name, value } = o as { name: unknown; value: unknown };
+    if (typeof name !== 'string' || typeof value !== 'string') {
+      throw new Error('Invalid ResourceTypeModifier in JSON.');
+    }
+    return new ResourceTypeModifier(name, value);
+  }
+
+  fromJSON(raw: string | unknown): Serializable {
+    return ResourceTypeModifier.fromJSON(raw);
   }
 
   validate(): void {
@@ -41,6 +59,22 @@ export class ResourceProperty implements Serializable {
     this.value = value;
   }
 
+  static fromJSON(raw: string | unknown): ResourceProperty {
+    const o = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (o === null || typeof o !== 'object' || !('name' in o) || !('value' in o)) {
+      throw new Error('Invalid ResourceProperty in JSON.');
+    }
+    const { name, value } = o as { name: unknown; value: unknown };
+    if (typeof name !== 'string') {
+      throw new Error('Invalid ResourceProperty in JSON.');
+    }
+    return new ResourceProperty(name, value);
+  }
+
+  fromJSON(raw: string | unknown): Serializable {
+    return ResourceProperty.fromJSON(raw);
+  }
+
   validate(): void {
     if (this.name.length === 0) {
       throw new Error("Resource property name is empty.");
@@ -64,6 +98,28 @@ export class ResourceHeader implements Serializable {
     this.type = type;
     this.modifiers = modifiers;
     this.validate();
+  }
+
+  static fromJSON(raw: string | unknown): ResourceHeader {
+    const o = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (o === null || typeof o !== 'object' || !('type' in o) || !('modifiers' in o)) {
+      throw new Error('Invalid ResourceHeader in JSON.');
+    }
+    const { type, modifiers } = o as { type: unknown; modifiers: unknown };
+    if (typeof type !== 'string') {
+      throw new Error('Invalid ResourceHeader in JSON.');
+    }
+    if (!Array.isArray(modifiers)) {
+      throw new Error('Invalid ResourceHeader in JSON.');
+    }
+    return new ResourceHeader(
+      type as ResourceType,
+      modifiers.map((m) => ResourceTypeModifier.fromJSON(m))
+    );
+  }
+
+  fromJSON(raw: string | unknown): Serializable {
+    return ResourceHeader.fromJSON(raw);
   }
 
   getModifier(name: string): ResourceTypeModifier | undefined {
@@ -94,6 +150,25 @@ export class Resource implements Serializable {
     this.properties = properties;
   }
 
+  static fromJSON(raw: string | unknown): Resource {
+    const o = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (o === null || typeof o !== 'object' || !('header' in o) || !('properties' in o)) {
+      throw new Error('Invalid Resource in JSON.');
+    }
+    const { header, properties } = o as { header: unknown; properties: unknown };
+    if (!Array.isArray(properties)) {
+      throw new Error('Invalid Resource in JSON.');
+    }
+    return new Resource(
+      ResourceHeader.fromJSON(header),
+      properties.map((p) => ResourceProperty.fromJSON(p))
+    );
+  }
+
+  fromJSON(raw: string | unknown): Serializable {
+    return Resource.fromJSON(raw);
+  }
+
   addProperty(property: ResourceProperty): void {
     this.properties.push(property);
   }
@@ -112,7 +187,7 @@ export class Resource implements Serializable {
   }
 }
 
-export class ResourceFile {
+export class ResourceFile implements Serializable {
   header: ResourceHeader;
   resources: Resource[];
 
@@ -120,6 +195,28 @@ export class ResourceFile {
     this.header = header;
     this.resources = resources;
     this.validate();
+  }
+
+  /**
+   * Builds a ResourceFile from JSON produced by {@link ResourceFile.toJSON} (string or parsed object).
+   */
+  static fromJSON(raw: string | unknown): ResourceFile {
+    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (data === null || typeof data !== 'object' || !('header' in data) || !('resources' in data)) {
+      throw new Error('Invalid ResourceFile JSON: expected object with header and resources.');
+    }
+    const { header, resources } = data as { header: unknown; resources: unknown };
+    if (!Array.isArray(resources)) {
+      throw new Error('Invalid ResourceFile JSON: resources must be an array.');
+    }
+    return new ResourceFile(
+      ResourceHeader.fromJSON(header),
+      resources.map((r) => Resource.fromJSON(r))
+    );
+  }
+
+  fromJSON(raw: string | unknown): Serializable {
+    return ResourceFile.fromJSON(raw);
   }
 
   insertResource(res: Resource): void {
