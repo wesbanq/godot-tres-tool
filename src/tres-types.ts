@@ -3,10 +3,40 @@ export type ResourceUid = `uid://${string}`;
 export type ResourceId = `id://${string}`;
 export type ResourceRes = `res://${string}`;
 
+/** Godot writes integer `format` without quotes in .tres headers. */
+function formatGodotHeaderModifier(name: string, value: string): string {
+  if (Number.isFinite(Number(value))) {
+    return `${name}=${value}`;
+  }
+  return `${name}="${value}"`;
+}
+
+/** Match Godot property serialization (numbers and constructor/array literals unquoted; plain strings quoted). */
+function formatGodotPropertyValue(value: string): string {
+  if (/^-?\d+$/.test(value)) {
+    return value;
+  }
+  if (/^-?\d+\.\d+([eE][+-]?\d+)?$/.test(value)) {
+    return value;
+  }
+  if (value === 'true' || value === 'false') {
+    return value;
+  }
+  if (/^(ExtResource|SubResource)\s*\(/i.test(value)) {
+    return value;
+  }
+  if (/^Array\[/.test(value)) {
+    return value;
+  }
+  if (/^[A-Za-z_][A-Za-z0-9_]*\s*\(/.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 export interface Serializable {
   validate(): void;
   toTres(): string;
-  /** Instance hook delegates to \`static fromJSON\` on each implementation class. */
   fromJSON(raw: string | unknown): Serializable;
 }
 
@@ -46,7 +76,7 @@ export class ResourceTypeModifier implements Serializable {
   }
 
   toTres(): string {
-    return `${this.name}="${this.value}"`;
+    return formatGodotHeaderModifier(this.name, this.value);
   }
 }
 
@@ -86,7 +116,7 @@ export class ResourceProperty implements Serializable {
 
   toTres(): string {
     this.validate();
-    return `${this.name} = ${this.value}`;
+    return `${this.name} = ${formatGodotPropertyValue(this.value)}`;
   }
 }
 
@@ -137,7 +167,11 @@ export class ResourceHeader implements Serializable {
   }
 
   toTres(): string {
-    return "[" + this.type + " " + this.modifiers.map((modifier) => `${modifier.name}="${modifier.value}"`).join(' ') + "]";
+    if (this.modifiers.length === 0) {
+      return `[${this.type}]`;
+    }
+    const inner = this.modifiers.map((m) => formatGodotHeaderModifier(m.name, m.value)).join(' ');
+    return `[${this.type} ${inner}]`;
   }
 }
 
@@ -183,7 +217,7 @@ export class Resource implements Serializable {
   }
 
   toTres(): string {
-    return this.header.toTres() + "\n" + this.properties.map((property) => property.toTres()).join("\n");
+    return this.header.toTres() + (this.properties.length > 0 ? "\n" : "") + this.properties.map((property) => property.toTres()).join("\n");
   }
 }
 
@@ -232,7 +266,12 @@ export class ResourceFile implements Serializable {
   }
 
   toTres(): string {
-    return this.header.toTres() + "\n" + this.resources.map((resource) => resource.toTres()).join("\n");
+    return (
+      this.header.toTres() +
+      "\n\n" +
+      this.resources.map((resource) => resource.toTres()).join("\n\n") +
+      "\n"
+    );
   }
 
   godotVersion(): string {

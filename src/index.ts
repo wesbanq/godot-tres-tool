@@ -61,16 +61,17 @@ cli.command('tres <path>', 'Convert a JSON file to a .tres file')
     validatePath(path);
 
     const file = types.ResourceFile.fromJSON(fs.readFileSync(path, 'utf8'));
+    const text = file.toTres();
     if (options.stdout) {
-      console.log(file.toTres());
+      console.log(text);
     } else {
       const outPath = resolveConvertedOutputPath(path, options.output, '.tres');
-      fs.writeFileSync(outPath, file.toTres());
+      fs.writeFileSync(outPath, text);
     }
   });
 
 cli.help()
-cli.version('0.0.2')
+cli.version('0.0.3')
 
 try {
   cli.parse();
