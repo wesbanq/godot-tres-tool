@@ -42,7 +42,6 @@ export function parseResourceFile(filePath: string): types.ResourceFile {
     if (res.length === 0) {
       throw new Error("Empty resource.");
     }
-    console.log(res);
 
     const header = parseResourceHeader(res[0]);
     const properties = res.slice(1).map((prop) => parseResourceProperty(prop));

@@ -18,13 +18,10 @@ cli.command('json <path>', 'Convert a .tres file to a JSON file')
   .action((path, options) => {
     validatePath(path);
 
-    console.log(options);
     const file = parser.parseResourceFile(path);
     if (options.stdout) {
-      console.log("asdasd");
       console.log(file.toJSON());
     } else {
-      console.log("asdas2d");
       fs.writeFileSync(options.output || path.replace('.tres', '.json'), file.toJSON());
     }
 });
