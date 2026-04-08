@@ -258,11 +258,11 @@ export class ResourceFile implements Serializable {
     this.validate();
   }
 
-  toJSON(): string {
+  toJSON(minified: boolean = false): string {
     return JSON.stringify({
       header: this.header,
       resources: this.resources,
-    }, null, 2);
+    }, null, minified ? undefined : 2);
   }
 
   toTres(): string {

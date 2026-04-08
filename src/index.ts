@@ -39,22 +39,23 @@ const cli = cac();
 cli.option('-d, --debug', 'Show debug information', { default: false });
 
 cli.command('json <path>', 'Convert a .tres file to a JSON file')
+  .option('-m, --minified', 'Minify the output')
   .option('-s, --stdout', 'Output to stdout')
   .option('-o, --output <path>', 'Output to a specific path')
   .action((path, options) => {
     validatePath(path);
 
     const file = parser.parseResourceFile(path);
+    let text = file.toJSON(options.minified);
     if (options.stdout) {
-      console.log(file.toJSON());
+      console.log(text);
     } else {
       const outPath = resolveConvertedOutputPath(path, options.output, '.json');
-      fs.writeFileSync(outPath, file.toJSON());
+      fs.writeFileSync(outPath, text);
     }
   });
 
 cli.command('tres <path>', 'Convert a JSON file to a .tres file')
-  .option('-m, --minified', 'Minify the output')
   .option('-s, --stdout', 'Output to stdout')
   .option('-o, --output <path>', 'Output to a specific path')
   .action((path, options) => {
