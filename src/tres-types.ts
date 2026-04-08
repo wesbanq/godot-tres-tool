@@ -6,14 +6,35 @@ export type ResourcePath = `${string}/${string}`;
 export type ResourcePropertyString = `${ResourcePath} = ${any}`;
 export type ResourceTypeModifierString = `${string}="${string}"`;
 
-export type ResourceTypeModifier = {
-  name: string;
-  value: string;
-}
-
-interface TresSerializable {
+  //TODO
+export interface TresSerializable {
   validate(): void;
   toTres(): string;
+  //toJSON(): string;
+}
+
+export class ResourceTypeModifier implements TresSerializable {
+  name: string;
+  value: string;
+
+  constructor(name: string, value: string) {
+    this.name = name;
+    this.value = value;
+    this.validate();
+  }
+
+  validate(): void {
+    if (this.name.length === 0) {
+      throw new Error("Resource type modifier name is empty.");
+    }
+    if (this.value.length === 0) {
+      throw new Error("Resource type modifier value is empty.");
+    }
+  }
+
+  toTres(): string {
+    return `${this.name}="${this.value}"`;
+  }
 }
 
 export class ResourceProperty implements TresSerializable {
@@ -47,19 +68,24 @@ export class ResourceHeader implements TresSerializable {
   constructor(type: ResourceType, modifiers: ResourceTypeModifier[]) {
     this.type = type;
     this.modifiers = modifiers;
+    this.validate();
+  }
+
+  getModifier(name: string): ResourceTypeModifier | undefined {
+    return this.modifiers.find((modifier) => modifier.name === name);
+  }
+
+  addModifier(modifier: ResourceTypeModifier): void {
+    this.modifiers.push(modifier);
   }
 
   validate(): void {
     if (this.type.length === 0) {
       throw new Error("Resource header type is empty.");
     }
-    if (this.modifiers.length === 0) {
-      throw new Error("Resource header has no modifiers.");
-    }
   }
 
   toTres(): string {
-    this.validate();
     return "[" + this.type + " " + this.modifiers.map((modifier) => `${modifier.name}="${modifier.value}"`).join(' ') + "]";
   }
 }
@@ -71,6 +97,14 @@ export class Resource implements TresSerializable {
   constructor(header: ResourceHeader, properties: ResourceProperty[]) {
     this.header = header;
     this.properties = properties;
+  }
+
+  addProperty(property: ResourceProperty): void {
+    this.properties.push(property);
+  }
+
+  getProperty(name: string): ResourceProperty | undefined {
+    return this.properties.find((property) => property.name === name);
   }
 
   validate(): void {
@@ -90,25 +124,27 @@ export class ResourceFile {
   constructor(header: ResourceHeader, resources: Resource[]) {
     this.header = header;
     this.resources = resources;
+    this.validate();
+  }
+
+  insertResource(res: Resource): void {
+    this.resources.push(res);
+    this.validate();
   }
 
   toJSON(): string {
-    this.validate();
-    return JSON.stringify(this, null, 2);
+    return JSON.stringify({
+      header: this.header,
+      resources: this.resources,
+    }, null, 2);
   }
 
   toTres(): string {
-    this.validate();
     return this.header.toTres() + "\n" + this.resources.map((resource) => resource.toTres()).join("\n");
   }
 
   godotVersion(): string {
-    const version = this.header.modifiers.find((modifier) => modifier.name === 'format');
-    if (version) {
-      return version.value;
-    } else {
-      throw new Error('Base resource header has no format modifier.');
-    }
+    return this.header.getModifier('format')!.value;
   }
 
   validate(): void {

@@ -140,4 +140,5 @@ vite.config.ts.timestamp-*
 
 # Custom
 *.tres
+*.js
 test/
