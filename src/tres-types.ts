@@ -1,6 +1,10 @@
+/** Bracket header kind in a `.tres` file (`gd_resource`, `ext_resource`, etc.). */
 export type ResourceType = 'resource' | 'sub_resource' | 'ext_resource' | 'gd_resource';
+/** Godot unique-id reference (`uid://...`). */
 export type ResourceUid = `uid://${string}`;
+/** In-file resource id (`id://...`). */
 export type ResourceId = `id://${string}`;
+/** Project path reference (`res://...`). */
 export type ResourceRes = `res://${string}`;
 
 /** Godot writes integer `format` without quotes in .tres headers. */
@@ -34,12 +38,14 @@ function formatGodotPropertyValue(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+/** Model types that can validate, serialize to `.tres` lines, and hydrate from JSON. */
 export interface Serializable {
   validate(): void;
   toTres(): string;
   fromJSON(raw: string | unknown): Serializable;
 }
 
+/** `name=value` pair inside a `[...]` header (e.g. `path=`, `type=`, `format=`). */
 export class ResourceTypeModifier implements Serializable {
   name: string;
   value: string;
@@ -80,6 +86,7 @@ export class ResourceTypeModifier implements Serializable {
   }
 }
 
+/** One `key = value` line under a resource block; `value` mirrors JSON/Godot (primitives or nested structures). */
 export class ResourceProperty implements Serializable {
   name: string;
   value: any;
@@ -120,6 +127,7 @@ export class ResourceProperty implements Serializable {
   }
 }
 
+/** The `[type ...]` line for a single resource section. */
 export class ResourceHeader implements Serializable {
   type: ResourceType;
   modifiers: ResourceTypeModifier[];
@@ -175,6 +183,7 @@ export class ResourceHeader implements Serializable {
   }
 }
 
+/** Header plus property lines for one `sub_resource` / `ext_resource` / inner `resource` block. */
 export class Resource implements Serializable {
   header: ResourceHeader;
   properties: ResourceProperty[];
@@ -221,6 +230,7 @@ export class Resource implements Serializable {
   }
 }
 
+/** Whole `.tres` document: leading `gd_resource` header plus ordered resource blocks. */
 export class ResourceFile implements Serializable {
   header: ResourceHeader;
   resources: Resource[];
@@ -274,6 +284,7 @@ export class ResourceFile implements Serializable {
     );
   }
 
+  /** `format` modifier on the root `gd_resource` (Godot resource format version). */
   godotVersion(): string {
     return this.header.getModifier('format')!.value;
   }

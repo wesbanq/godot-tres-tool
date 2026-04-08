@@ -1,9 +1,13 @@
+/**
+ * CLI: convert Godot `.tres` text resources to JSON and back.
+ */
 import cac from 'cac'
 import fs from 'fs';
 import path from 'node:path';
 import * as parser from './parser';
 import * as types from './tres-types';
 
+/** Throws if `filePath` is empty or missing on disk. */
 function validatePath(filePath: string): void {
   if (!filePath || !fs.existsSync(filePath)) {
     throw new Error('File does not exist');

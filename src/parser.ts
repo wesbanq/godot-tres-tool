@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import * as types from './tres-types'
 
+/** Removes paired surrounding `"` repeatedly (Godot may wrap modifier values in quotes). */
 function stripOuterQuotes(raw: string): string {
   let s = raw.trim()
   while (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') {
@@ -9,6 +10,7 @@ function stripOuterQuotes(raw: string): string {
   return s
 }
 
+/** One group per `[...]` header line and its following non-empty lines until the next header. */
 function groupLinesByHeader(lines: string[]): string[][] {
   const groupedLines: string[][] = [];
   let currentGroup: string[] | null = null;
@@ -32,6 +34,10 @@ function groupLinesByHeader(lines: string[]): string[][] {
   return groupedLines;
 }
 
+/**
+ * Parses a `.tres` file: first block must be `gd_resource` with no property lines;
+ * remaining blocks become {@link types.Resource} entries.
+ */
 export function parseResourceFile(filePath: string): types.ResourceFile {
   const fileContent = fs.readFileSync(filePath, 'utf8')
     .split('\n')
@@ -57,6 +63,7 @@ export function parseResourceFile(filePath: string): types.ResourceFile {
   return file as types.ResourceFile;
 }
 
+/** Parses `[type name=value ...]` into a {@link types.ResourceHeader}. */
 export function parseResourceHeader(line: string): types.ResourceHeader {
   if (!line.startsWith('[') || !line.endsWith(']')) {
     throw new Error(`Invalid resource header: "${line}"`);
@@ -76,6 +83,7 @@ export function parseResourceHeader(line: string): types.ResourceHeader {
   return new types.ResourceHeader(type, modifiers);
 }
 
+/** Parses `name = value` (single `=`); value is quote-stripped but otherwise raw text. */
 export function parseResourceProperty(line: string): types.ResourceProperty {
   const property = /([^ =]+) = (.*)/g.exec(line);
   if (!property) {
