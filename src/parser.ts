@@ -1,6 +1,14 @@
 import fs from 'node:fs'
 import * as types from './tres-types'
 
+function stripOuterQuotes(raw: string): string {
+  let s = raw.trim()
+  while (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') {
+    s = s.slice(1, -1)
+  }
+  return s
+}
+
 function groupLinesByHeader(lines: string[]): string[][] {
   const groupedLines: string[][] = [];
   let currentGroup: string[] | null = null;
@@ -63,7 +71,7 @@ export function parseResourceHeader(line: string): types.ResourceHeader {
   const type = things[0][0] as types.ResourceType;
   const modifiers = things.slice(1).map((modifier) => {
     const [name, value] = modifier[0].split('=');
-    return { name, value } as types.ResourceTypeModifier;
+    return { name, value: stripOuterQuotes(value) } as types.ResourceTypeModifier;
   });
 
   return new types.ResourceHeader(type, modifiers);
@@ -75,8 +83,8 @@ export function parseResourceProperty(line: string): types.ResourceProperty {
     throw new Error(`Invalid resource property: "${line}"`);
   }
 
-  const name = property[1] as types.ResourcePath;
-  const value = property[2] as string;
-  
+  const name = property[1] as string;
+  const value = stripOuterQuotes(property[2] as string);
+
   return { name, value } as types.ResourceProperty;
 }

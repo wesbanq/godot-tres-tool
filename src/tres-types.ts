@@ -2,18 +2,13 @@ export type ResourceType = 'resource' | 'sub_resource' | 'ext_resource' | 'gd_re
 export type ResourceUid = `uid://${string}`;
 export type ResourceId = `id://${string}`;
 export type ResourceRes = `res://${string}`;
-export type ResourcePath = `${string}/${string}`;
-export type ResourcePropertyString = `${ResourcePath} = ${any}`;
-export type ResourceTypeModifierString = `${string}="${string}"`;
 
-  //TODO
-export interface TresSerializable {
+export interface Serializable {
   validate(): void;
   toTres(): string;
-  //toJSON(): string;
 }
 
-export class ResourceTypeModifier implements TresSerializable {
+export class ResourceTypeModifier implements Serializable {
   name: string;
   value: string;
 
@@ -37,7 +32,7 @@ export class ResourceTypeModifier implements TresSerializable {
   }
 }
 
-export class ResourceProperty implements TresSerializable {
+export class ResourceProperty implements Serializable {
   name: string;
   value: any;
 
@@ -61,7 +56,7 @@ export class ResourceProperty implements TresSerializable {
   }
 }
 
-export class ResourceHeader implements TresSerializable {
+export class ResourceHeader implements Serializable {
   type: ResourceType;
   modifiers: ResourceTypeModifier[];
 
@@ -90,7 +85,7 @@ export class ResourceHeader implements TresSerializable {
   }
 }
 
-export class Resource implements TresSerializable {
+export class Resource implements Serializable {
   header: ResourceHeader;
   properties: ResourceProperty[];
 
