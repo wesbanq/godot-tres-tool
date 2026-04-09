@@ -7,6 +7,11 @@ export type ResourceId = `id://${string}`;
 /** Project path reference (`res://...`). */
 export type ResourceRes = `res://${string}`;
 
+/** Check if a value is a ResourceRes. */
+export function isResourceRes(value: unknown): value is ResourceRes {
+  return typeof value === 'string' && value.startsWith('res://');
+}
+
 /** Godot writes integer `format` without quotes in .tres headers. */
 function formatGodotHeaderModifier(name: string, value: string): string {
   if (Number.isFinite(Number(value))) {

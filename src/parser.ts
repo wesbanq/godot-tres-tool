@@ -153,7 +153,7 @@ export function parseResourceContent(source: string): types.ResourceFile {
     }
 
     if (header !== undefined) {
-      resources.push({ header, properties } as types.Resource)
+      resources.push(new types.Resource(header, properties))
     }
   }
 
