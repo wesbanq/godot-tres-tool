@@ -14,6 +14,13 @@ function validatePath(filePath: string): void {
   }
 }
 
+/** Logical basename for {@link resolveConvertedOutputPath} when input is stdin. */
+const STDIN_LOGICAL_PATH = 'stdin';
+
+function readStdinUtf8Sync(): string {
+  return fs.readFileSync(0, 'utf8');
+}
+
 /**
  * Directory if it exists as a dir, or path ends with a separator; otherwise a concrete output file path.
  * `outputExt` includes the dot (e.g. `.json`, `.tres`).
@@ -42,35 +49,52 @@ const cli = cac();
 
 cli.option('-d, --debug', 'Show debug information', { default: false });
 
-cli.command('json <path>', 'Convert a .tres file to a JSON file')
+cli.command('json [path]', 'Convert a .tres file to a JSON file (stdin if path omitted)')
   .option('-m, --minified', 'Minify the output')
   .option('-s, --stdout', 'Output to stdout')
   .option('-o, --output <path>', 'Output to a specific path')
-  .action((path, options) => {
-    validatePath(path);
+  .action((path: string | undefined, options) => {
+    const useStdin = path === undefined || path === '';
+    if (!useStdin) {
+      validatePath(path);
+    }
 
-    const file = parser.parseResourceFile(path);
+    const file = useStdin
+      ? parser.parseResourceContent(readStdinUtf8Sync())
+      : parser.parseResourceFile(path!);
     let text = file.toJSON(options.minified);
     if (options.stdout) {
       console.log(text);
     } else {
-      const outPath = resolveConvertedOutputPath(path, options.output, '.json');
+      const outPath = resolveConvertedOutputPath(
+        useStdin ? STDIN_LOGICAL_PATH : path!,
+        options.output,
+        '.json'
+      );
       fs.writeFileSync(outPath, text);
     }
   });
 
-cli.command('tres <path>', 'Convert a JSON file to a .tres file')
+cli.command('tres [path]', 'Convert a JSON file to a .tres file (stdin if path omitted)')
   .option('-s, --stdout', 'Output to stdout')
   .option('-o, --output <path>', 'Output to a specific path')
-  .action((path, options) => {
-    validatePath(path);
+  .action((path: string | undefined, options) => {
+    const useStdin = path === undefined || path === '';
+    if (!useStdin) {
+      validatePath(path);
+    }
 
-    const file = types.ResourceFile.fromJSON(fs.readFileSync(path, 'utf8'));
+    const json = useStdin ? readStdinUtf8Sync() : fs.readFileSync(path!, 'utf8');
+    const file = types.ResourceFile.fromJSON(json);
     const text = file.toTres();
     if (options.stdout) {
       console.log(text);
     } else {
-      const outPath = resolveConvertedOutputPath(path, options.output, '.tres');
+      const outPath = resolveConvertedOutputPath(
+        useStdin ? STDIN_LOGICAL_PATH : path!,
+        options.output,
+        '.tres'
+      );
       fs.writeFileSync(outPath, text);
     }
   });

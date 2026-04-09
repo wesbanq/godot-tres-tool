@@ -35,11 +35,11 @@ function groupLinesByHeader(lines: string[]): string[][] {
 }
 
 /**
- * Parses a `.tres` file: first block must be `gd_resource` with no property lines;
+ * Parses `.tres` text: first block must be `gd_resource` with no property lines;
  * remaining blocks become {@link types.Resource} entries.
  */
-export function parseResourceFile(filePath: string): types.ResourceFile {
-  const fileContent = fs.readFileSync(filePath, 'utf8')
+export function parseResourceContent(source: string): types.ResourceFile {
+  const fileContent = source
     .split('\n')
     .filter((line) => line.trim().length > 0);
   const groupedLines = groupLinesByHeader(fileContent);
@@ -61,6 +61,14 @@ export function parseResourceFile(filePath: string): types.ResourceFile {
   const file = new types.ResourceFile(fileHeader, resources.slice(1));
 
   return file as types.ResourceFile;
+}
+
+/**
+ * Parses a `.tres` file: first block must be `gd_resource` with no property lines;
+ * remaining blocks become {@link types.Resource} entries.
+ */
+export function parseResourceFile(filePath: string): types.ResourceFile {
+  return parseResourceContent(fs.readFileSync(filePath, 'utf8'));
 }
 
 /** Parses `[type name=value ...]` into a {@link types.ResourceHeader}. */
