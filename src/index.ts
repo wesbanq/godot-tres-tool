@@ -85,8 +85,11 @@ cli.command('tres [path]', 'Convert a JSON file to a .tres file (stdin if path o
     }
 
     const json = useStdin ? readStdinUtf8Sync() : fs.readFileSync(path!, 'utf8');
-    const file = types.ResourceFile.fromJSON(json);
-    const text = file.toTres();
+    const { errors: jsonErrors, file } = types.ResourceFile.fromJSONWithErrors(json);
+    if (jsonErrors.length > 0) {
+      throw new parser.ParseAggregateError(jsonErrors);
+    }
+    const text = file!.toTres();
     if (options.stdout) {
       console.log(text);
     } else {

@@ -245,18 +245,63 @@ export class ResourceFile implements Serializable {
    * Builds a ResourceFile from JSON produced by {@link ResourceFile.toJSON} (string or parsed object).
    */
   static fromJSON(raw: string | unknown): ResourceFile {
-    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const { errors, file } = ResourceFile.fromJSONWithErrors(raw);
+    if (errors.length > 0) {
+      throw new Error(errors[0]);
+    }
+    return file!;
+  }
+
+  /**
+   * Like {@link ResourceFile.fromJSON} but records every top-level and resource-level failure
+   * instead of stopping at the first.
+   */
+  static fromJSONWithErrors(
+    raw: string | unknown
+  ): { errors: string[]; file?: ResourceFile } {
+    const errors: string[] = [];
+    let data: unknown;
+    try {
+      data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) {
+      return { errors: [(e as Error).message] };
+    }
     if (data === null || typeof data !== 'object' || !('header' in data) || !('resources' in data)) {
-      throw new Error('Invalid ResourceFile JSON: expected object with header and resources.');
+      errors.push('Invalid ResourceFile JSON: expected object with header and resources.');
+      return { errors };
     }
     const { header, resources } = data as { header: unknown; resources: unknown };
     if (!Array.isArray(resources)) {
-      throw new Error('Invalid ResourceFile JSON: resources must be an array.');
+      errors.push('Invalid ResourceFile JSON: resources must be an array.');
+      return { errors };
     }
-    return new ResourceFile(
-      ResourceHeader.fromJSON(header),
-      resources.map((r) => Resource.fromJSON(r))
-    );
+
+    let rh: ResourceHeader | undefined;
+    try {
+      rh = ResourceHeader.fromJSON(header);
+    } catch (e) {
+      errors.push(`header: ${(e as Error).message}`);
+    }
+
+    const resList: Resource[] = [];
+    resources.forEach((r, i) => {
+      try {
+        resList.push(Resource.fromJSON(r));
+      } catch (e) {
+        errors.push(`resources[${i}]: ${(e as Error).message}`);
+      }
+    });
+
+    if (errors.length > 0) {
+      return { errors };
+    }
+
+    const val = ResourceFile.collectValidationErrors(rh!, resList);
+    if (val.length > 0) {
+      return { errors: val };
+    }
+
+    return { file: new ResourceFile(rh!, resList), errors: [] };
   }
 
   fromJSON(raw: string | unknown): Serializable {
@@ -289,18 +334,31 @@ export class ResourceFile implements Serializable {
     return this.header.getModifier('format')!.value;
   }
 
+  /**
+   * Structural checks for a parsed document (same rules as {@link ResourceFile.validate}).
+   * Returns every failed check, not just the first.
+   */
+  static collectValidationErrors(header: ResourceHeader, resources: Resource[]): string[] {
+    const errors: string[] = [];
+    if (resources.length === 0) {
+      errors.push("No resources found in file.");
+    }
+    if (header.type !== 'gd_resource') {
+      errors.push("Base header is not a gd_resource.");
+    }
+    if (resources.slice(1).some((res) => res.header.type === 'gd_resource')) {
+      errors.push("Multiple gd_resource headers found in file.");
+    }
+    if (header.modifiers.find((modifier) => modifier.name === 'format') === undefined) {
+      errors.push("Base resource header has no format modifier.");
+    }
+    return errors;
+  }
+
   validate(): void {
-    if (this.resources.length === 0) {
-      throw new Error("No resources found in file.");
-    }
-    if (this.header.type !== 'gd_resource') {
-      throw new Error("Base header is not a gd_resource.");
-    }
-    if (this.resources.slice(1).some((res) => res.header.type === 'gd_resource')) {
-      throw new Error("Multiple gd_resource headers found in file.");
-    }
-    if (this.header.modifiers.find((modifier) => modifier.name === 'format') === undefined) {
-      throw new Error("Base resource header has no format modifier.");
+    const errors = ResourceFile.collectValidationErrors(this.header, this.resources);
+    if (errors.length > 0) {
+      throw new Error(errors[0]);
     }
   }
 }
