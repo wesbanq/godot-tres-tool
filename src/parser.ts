@@ -1,22 +1,24 @@
 import fs from 'node:fs'
+import { z } from 'zod'
 import * as types from './tres-types'
 
-/** Thrown when `.tres` parsing or document validation reports one or more issues. */
+/** Thrown when `.tres` parsing reports one or more issues. */
 export class ParseAggregateError extends Error {
-  readonly errors: string[];
+  readonly errors: string[]
 
   constructor(errors: string[]) {
-    super(errors.join('\n\n'));
-    this.name = 'ParseAggregateError';
-    this.errors = errors;
+    super(errors.join('\n\n'))
+    this.name = 'ParseAggregateError'
+    this.errors = errors
   }
 }
 
 /** Optional context for parse errors: 1-based line index and full source lines (index 0 = line 1). */
-export type ParseLineContext = {
-  lineNo: number
-  allLines: string[]
-}
+export const parseLineContextSchema = z.object({
+  lineNo: z.number().int().positive(),
+  allLines: z.array(z.string()),
+})
+export type ParseLineContext = z.infer<typeof parseLineContextSchema>
 
 /** Default number of lines before/after the error line to show. */
 const DEFAULT_CONTEXT_RADIUS = 2
@@ -39,6 +41,14 @@ function throwParse(message: string, ctx?: ParseLineContext): never {
     throw formatParseError(message, ctx)
   }
   throw new Error(message)
+}
+
+function throwZodParse(err: z.ZodError, ctx?: ParseLineContext): never {
+  const msg = types.formatZodError(err)
+  if (ctx !== undefined) {
+    throw formatParseError(msg, ctx)
+  }
+  throw new Error(msg)
 }
 
 type LineRef = { text: string; lineNo: number }
@@ -76,25 +86,10 @@ function groupLinesByHeader(lines: LineRef[]): LineRef[][] {
   return groupedLines
 }
 
-function lineNoForResourceFileError(
-  message: string,
-  headerLineNos: number[],
-  resources: types.Resource[]
-): number {
-  if (headerLineNos.length === 0) {
-    return 1
-  }
-  if (message === 'Multiple gd_resource headers found in file.') {
-    const idx = resources.findIndex((r, i) => i >= 2 && r.header.type === 'gd_resource')
-    return idx >= 0 ? headerLineNos[idx] : headerLineNos[0]
-  }
-  return headerLineNos[0]
-}
-
 /**
- * Parses `.tres` text: first block must be `gd_resource` with no property lines;
- * remaining blocks become {@link types.Resource} entries.
- * Collects every line and document-level problem, then throws {@link ParseAggregateError} if any exist.
+ * Parses `.tres` text into a {@link types.ResourceFile} without document-level validation.
+ * The first block must have no property lines (otherwise those lines would be dropped from the model).
+ * Line/header/property syntax errors are collected and reported via {@link ParseAggregateError}.
  */
 export function parseResourceContent(source: string): types.ResourceFile {
   const allLines = source.split(/\r?\n/)
@@ -173,24 +168,10 @@ export function parseResourceContent(source: string): types.ResourceFile {
 
   const fileHeader = resources[0].header
   const inner = resources.slice(1)
-  const fileValMsgs = types.ResourceFile.collectValidationErrors(fileHeader, inner)
-  if (fileValMsgs.length > 0) {
-    const formatted = fileValMsgs.map((msg) =>
-      formatParseError(msg, {
-        lineNo: lineNoForResourceFileError(msg, headerLineNos, resources),
-        allLines,
-      }).message
-    )
-    throw new ParseAggregateError(formatted)
-  }
-
-  return new types.ResourceFile(fileHeader, inner) as types.ResourceFile
+  return types.ResourceFile.fromParsedTres(fileHeader, inner)
 }
 
-/**
- * Parses a `.tres` file: first block must be `gd_resource` with no property lines;
- * remaining blocks become {@link types.Resource} entries.
- */
+/** Reads a `.tres` file and parses it with {@link parseResourceContent}. */
 export function parseResourceFile(filePath: string): types.ResourceFile {
   return parseResourceContent(fs.readFileSync(filePath, 'utf8'))
 }
@@ -206,20 +187,27 @@ export function parseResourceHeader(line: string, context?: ParseLineContext): t
     throwParse('Empty resource header string.', context)
   }
 
-  const type = things[0][0] as types.ResourceType
   const modifiers = things.slice(1).map((modifier) => {
-    const [name, value] = modifier[0].split('=')
-    return { name, value: stripOuterQuotes(value) } as types.ResourceTypeModifier
+    const modText = modifier[0]
+    const eq = modText.indexOf('=')
+    if (eq <= 0) {
+      throwParse(`Invalid resource header modifier (expected name=value): "${modText}"`, context)
+    }
+    const name = modText.slice(0, eq)
+    const value = stripOuterQuotes(modText.slice(eq + 1))
+    return { name, value }
   })
 
-  try {
-    return new types.ResourceHeader(type, modifiers)
-  } catch (e) {
-    if (e instanceof Error && context !== undefined) {
-      throw formatParseError(e.message, context)
-    }
-    throw e
+  const rawHeader = { type: things[0][0], modifiers }
+  const parsed = types.resourceHeaderJsonSchema.safeParse(rawHeader)
+  if (!parsed.success) {
+    throwZodParse(parsed.error, context)
   }
+
+  return new types.ResourceHeader(
+    parsed.data.type,
+    parsed.data.modifiers.map((m) => new types.ResourceTypeModifier(m.name, m.value))
+  )
 }
 
 /** Parses `name = value` (single `=`); value is quote-stripped but otherwise raw text. */
@@ -229,17 +217,13 @@ export function parseResourceProperty(line: string, context?: ParseLineContext):
     throwParse(`Invalid resource property: "${line}"`, context)
   }
 
-  const name = property[1] as string
-  const value = stripOuterQuotes(property[2] as string)
+  const name = property[1]
+  const value = stripOuterQuotes(property[2])
 
-  const prop = new types.ResourceProperty(name, value)
-  try {
-    prop.validate()
-  } catch (e) {
-    if (e instanceof Error && context !== undefined) {
-      throw formatParseError(e.message, context)
-    }
-    throw e
+  const parsed = types.resourcePropertyJsonSchema.safeParse({ name, value })
+  if (!parsed.success) {
+    throwZodParse(parsed.error, context)
   }
-  return prop
+
+  return new types.ResourceProperty(parsed.data.name, parsed.data.value)
 }

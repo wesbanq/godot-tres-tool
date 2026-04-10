@@ -142,3 +142,4 @@ vite.config.ts.timestamp-*
 *.tres
 *.js
 test/
+.cursor/
