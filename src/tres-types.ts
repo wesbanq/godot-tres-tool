@@ -436,19 +436,13 @@ export class ResourceFile implements Serializable {
   }
 
   /**
-   * Structural checks for a parsed document (same rules as {@link ResourceFile.validate}).
-   * Returns every failed check, not just the first.
+   * Core document checks used by {@link ResourceFile.validate} (root `format`, non-empty body).
+   * `gd_resource` placement is enforced by the analyzer, not here.
    */
   static collectValidationErrors(header: ResourceHeader, resources: Resource[]): string[] {
     const errors: string[] = [];
     if (resources.length === 0) {
       errors.push('No resources found in file.');
-    }
-    if (header.type !== 'gd_resource') {
-      errors.push('Base header is not a gd_resource.');
-    }
-    if (resources.slice(1).some((res) => res.header.type === 'gd_resource')) {
-      errors.push('Multiple gd_resource headers found in file.');
     }
     if (header.modifiers.find((modifier) => modifier.name === 'format') === undefined) {
       errors.push('Base resource header has no format modifier.');

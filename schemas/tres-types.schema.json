@@ -72,7 +72,7 @@
       "additionalProperties": false
     },
     "ResourceHeaderGdResource": {
-      "description": "Root header: must be gd_resource and include a format modifier (ResourceFile.validate).",
+      "description": "Root header: gd_resource with a format modifier (format required by ResourceFile.validate; gd_resource placement also checked by the analyzer).",
       "allOf": [
         {
           "$ref": "#/$defs/ResourceHeader"
@@ -121,7 +121,7 @@
       "additionalProperties": false
     },
     "ResourceNotGdResource": {
-      "description": "Matches ResourceFile.validate: no gd_resource header except the document root (forbidden from resources[1] onward).",
+      "description": "Inner resources must not use gd_resource (enforced by the analyzer).",
       "allOf": [
         {
           "$ref": "#/$defs/Resource"

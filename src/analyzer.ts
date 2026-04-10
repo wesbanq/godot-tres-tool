@@ -36,15 +36,28 @@ function mergeSettings(settings: AnalyzerSettings | undefined): AnalyzerSettings
   return analyzerSettingsSchema.parse(settings ?? {})
 }
 
-/** Document-level structural rules (aligned with {@link types.ResourceFile.collectValidationErrors}). */
-function collectDocumentIssues(file: types.ResourceFile, settings: AnalyzerSettings): Issue[] {
+const MSG_BASE_NOT_GD_RESOURCE = 'Base header is not a gd_resource.'
+const MSG_MULTIPLE_GD_RESOURCE = 'Multiple gd_resource headers found in file.'
+
+/** Root must be `gd_resource`; no inner block may repeat `gd_resource`. */
+function collectGdResourceLayoutIssues(file: types.ResourceFile, settings: AnalyzerSettings): Issue[] {
+  const issues: Issue[] = []
+  if (file.header.type !== 'gd_resource') {
+    issues.push({ severity: IssueSeverity.Error, message: MSG_BASE_NOT_GD_RESOURCE })
+  }
+  const innerHasGdResource = file.resources.some((res) => res.header.type === 'gd_resource')
+  if (innerHasGdResource && !settings.ignoreMultipleGdResource) {
+    issues.push({ severity: IssueSeverity.Error, message: MSG_MULTIPLE_GD_RESOURCE })
+  }
+  return issues
+}
+
+/** Rules shared with {@link types.ResourceFile.collectValidationErrors} (format / non-empty body). */
+function collectCoreDocumentIssues(file: types.ResourceFile, settings: AnalyzerSettings): Issue[] {
   const messages = types.ResourceFile.collectValidationErrors(file.header, file.resources)
   const issues: Issue[] = []
   for (const msg of messages) {
     if (settings.ignoreFormat && msg === 'Base resource header has no format modifier.') {
-      continue
-    }
-    if (settings.ignoreMultipleGdResource && msg === 'Multiple gd_resource headers found in file.') {
       continue
     }
     issues.push({ severity: IssueSeverity.Error, message: msg })
@@ -53,8 +66,8 @@ function collectDocumentIssues(file: types.ResourceFile, settings: AnalyzerSetti
 }
 
 /**
- * Root `gd_resource` header: optional strict check that `format` is an integer from 1–3 when present.
- * A missing `format` is reported only via {@link types.ResourceFile.collectValidationErrors} (unless ignored).
+ * Root header: optional strict check that `format` is an integer from 1–3 when present.
+ * A missing `format` is reported via {@link types.ResourceFile.collectValidationErrors} (unless ignored).
  */
 function analyzeRootHeader(header: types.ResourceHeader, settings: AnalyzerSettings): Issue[] {
   const issues: Issue[] = []
@@ -128,7 +141,8 @@ function analyzeRootHeaderShape(header: types.ResourceHeader, settings: Analyzer
 export function analyzeResourceFile(resourceFile: types.ResourceFile, settings?: AnalyzerSettings): Issue[] {
   const s = mergeSettings(settings)
   const issues: Issue[] = []
-  issues.push(...collectDocumentIssues(resourceFile, s))
+  issues.push(...collectGdResourceLayoutIssues(resourceFile, s))
+  issues.push(...collectCoreDocumentIssues(resourceFile, s))
   issues.push(...analyzeRootHeaderShape(resourceFile.header, s))
   for (const resource of resourceFile.resources) {
     issues.push(...analyzeResource(resource))
