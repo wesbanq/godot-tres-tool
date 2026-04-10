@@ -8,6 +8,7 @@ import { z, ZodError } from 'zod';
 import * as analyzer from './analyzer';
 import { IssueSeverity } from './errors';
 import * as parser from './parser';
+import * as serializer from './serializer';
 import * as types from './tres-types';
 import * as tools from './tools';
 
@@ -118,12 +119,12 @@ cli.command('tres [path]', 'Convert a JSON file to a .tres file (stdin if path o
   .option('-o, --output <path>', 'Output to a specific path')
   .action((path: string | undefined, options) => {
     const { content, outPath } = readCliInput(path, options.output, '.tres');
-    const { errors, file } = types.ResourceFile.fromJSONWithErrors(content);
+    const { errors, file } = serializer.deserializeResourceFileFromJsonWithErrors(content);
     if (errors.length > 0) {
       throw new parser.ParseAggregateError(errors);
     }
     requireAnalyzerClean(file!);
-    const text = file!.toTres();
+    const text = serializer.serializeResourceFile(file!);
     if (options.stdout || outPath === undefined) {
       console.log(text);
     } else {
@@ -139,7 +140,7 @@ cli.command('change-res [file] <oldPath> <newPath>', 'Change the res path of a r
     const parsedFile = parser.parseResourceContent(content);
     requireAnalyzerClean(parsedFile);
     const newFile = tools.changeResPath(parsedFile, from, to);
-    const text = newFile.toTres();
+    const text = serializer.serializeResourceFile(newFile);
     if (options.stdout || outPath === undefined) {
       console.log(text);
     } else {

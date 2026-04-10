@@ -97,41 +97,9 @@ export const resourceFileJsonSchema = z.object({
 });
 export type ResourceFileJSON = z.infer<typeof resourceFileJsonSchema>;
 
-/** Godot writes integer `format` without quotes in .tres headers. */
-function formatGodotHeaderModifier(name: string, value: string): string {
-  if (Number.isFinite(Number(value))) {
-    return `${name}=${value}`;
-  }
-  return `${name}="${value}"`;
-}
-
-/** Match Godot property serialization (numbers and constructor/array literals unquoted; plain strings quoted). */
-function formatGodotPropertyValue(value: string): string {
-  if (/^-?\d+$/.test(value)) {
-    return value;
-  }
-  if (/^-?\d+\.\d+([eE][+-]?\d+)?$/.test(value)) {
-    return value;
-  }
-  if (value === 'true' || value === 'false') {
-    return value;
-  }
-  if (/^(ExtResource|SubResource)\s*\(/i.test(value)) {
-    return value;
-  }
-  if (/^Array\[/.test(value)) {
-    return value;
-  }
-  if (/^[A-Za-z_][A-Za-z0-9_]*\s*\(/.test(value)) {
-    return value;
-  }
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-}
-
-/** Model types that can validate, serialize to `.tres` lines, and hydrate from JSON. */
+/** Model types that can validate and hydrate from JSON; `.tres` text is produced by `serializer.serializeToTres` / `serializeResourceFile`. */
 export interface Serializable {
   validate(): void;
-  toTres(): string;
   fromJSON(raw: string | unknown): Serializable;
 }
 
@@ -179,10 +147,6 @@ export class ResourceTypeModifier implements Serializable {
       throw new Error(r.error.issues[0]?.message ?? 'Invalid ResourceTypeModifier.');
     }
   }
-
-  toTres(): string {
-    return formatGodotHeaderModifier(this.name, this.value);
-  }
 }
 
 /** One `key = value` line under a resource block; `value` mirrors JSON/Godot (primitives or nested structures). */
@@ -213,11 +177,6 @@ export class ResourceProperty implements Serializable {
     if (!r.success) {
       throw new Error(r.error.issues[0]?.message ?? 'Invalid ResourceProperty.');
     }
-  }
-
-  toTres(): string {
-    this.validate();
-    return `${this.name} = ${formatGodotPropertyValue(this.value)}`;
   }
 }
 
@@ -265,14 +224,6 @@ export class ResourceHeader implements Serializable {
       throw new Error(r.error.issues[0]?.message ?? 'Invalid ResourceHeader.');
     }
   }
-
-  toTres(): string {
-    if (this.modifiers.length === 0) {
-      return `[${this.type}]`;
-    }
-    const inner = this.modifiers.map((m) => formatGodotHeaderModifier(m.name, m.value)).join(' ');
-    return `[${this.type} ${inner}]`;
-  }
 }
 
 /** Header plus property lines for one `sub_resource` / `ext_resource` / inner `resource` block. */
@@ -308,10 +259,6 @@ export class Resource implements Serializable {
   validate(): void {
     this.header.validate();
     this.properties.forEach((property) => property.validate());
-  }
-
-  toTres(): string {
-    return this.header.toTres() + (this.properties.length > 0 ? '\n' : '') + this.properties.map((property) => property.toTres()).join('\n');
   }
 }
 
@@ -425,10 +372,6 @@ export class ResourceFile implements Serializable {
       null,
       minified ? undefined : 2
     );
-  }
-
-  toTres(): string {
-    return this.header.toTres() + '\n\n' + this.resources.map((resource) => resource.toTres()).join('\n\n') + '\n';
   }
 
   /** `format` modifier on the root `gd_resource` (Godot resource format version). */
