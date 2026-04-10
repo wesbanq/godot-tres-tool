@@ -183,7 +183,7 @@ export function parseResourceHeader(line: string, context?: ParseLineContext): t
   })
 
   const rawHeader = { type: things[0][0], modifiers }
-  const parsed = types.resourceHeaderJsonSchema.safeParse(rawHeader)
+  const parsed = types.resourceHeaderSchema.safeParse(rawHeader)
   if (!parsed.success) {
     throwParseError(ErrorCode.SchemaValidationFailed, context, types.formatZodError(parsed.error))
   }
@@ -633,7 +633,7 @@ export function parseResourceProperty(line: string, context?: ParseLineContext):
   const name = property[1]
   const value = parsePropertyValue(property[2], context)
 
-  const parsed = types.resourcePropertyJsonSchema.safeParse({ name, value })
+  const parsed = types.resourcePropertySchema.safeParse({ name, value })
   if (!parsed.success) {
     throwParseError(ErrorCode.SchemaValidationFailed, context, types.formatZodError(parsed.error))
   }

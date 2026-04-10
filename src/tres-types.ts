@@ -111,39 +111,39 @@ export const godotResourceFormatSchema = z
   );
 
 /** `name=value` pair inside a `[...]` header (e.g. `path=`, `type=`, `format=`). */
-export const resourceTypeModifierJsonSchema = z.object({
+export const resourceTypeModifierSchema = z.object({
   name: z.string().min(1, 'Resource type modifier name is empty.'),
   value: z.string().min(1, 'Resource type modifier value is empty.'),
 });
-export type ResourceTypeModifierJSON = z.infer<typeof resourceTypeModifierJsonSchema>;
+export type ResourceTypeModifierJSON = z.infer<typeof resourceTypeModifierSchema>;
 
 /** One `key = value` line under a resource block; `value` mirrors JSON/Godot (primitives or nested structures). */
-export const resourcePropertyJsonSchema = z.object({
+export const resourcePropertySchema = z.object({
   name: z.string().min(1, 'Resource property name is empty.'),
   value: propertyValueSchema,
 });
-export type ResourcePropertyJSON = z.infer<typeof resourcePropertyJsonSchema>;
+export type ResourcePropertyJSON = z.infer<typeof resourcePropertySchema>;
 
 /** The `[type ...]` line for a single resource section. */
-export const resourceHeaderJsonSchema = z.object({
+export const resourceHeaderSchema = z.object({
   type: resourceTypeSchema,
-  modifiers: z.array(resourceTypeModifierJsonSchema),
+  modifiers: z.array(resourceTypeModifierSchema),
 });
-export type ResourceHeaderJSON = z.infer<typeof resourceHeaderJsonSchema>;
+export type ResourceHeaderJSON = z.infer<typeof resourceHeaderSchema>;
 
 /** Header plus property lines for one `sub_resource` / `ext_resource` / inner `resource` block. */
-export const resourceJsonSchema = z.object({
-  header: resourceHeaderJsonSchema,
-  properties: z.array(resourcePropertyJsonSchema),
+export const resourceSchema = z.object({
+  header: resourceHeaderSchema,
+  properties: z.array(resourcePropertySchema),
 });
-export type ResourceJSON = z.infer<typeof resourceJsonSchema>;
+export type ResourceJSON = z.infer<typeof resourceSchema>;
 
 /** Shape produced by {@link ResourceFile.toJSON} / accepted by {@link ResourceFile.fromJSON}. */
-export const resourceFileJsonSchema = z.object({
-  header: resourceHeaderJsonSchema,
-  resources: z.array(resourceJsonSchema),
+export const resourceFileSchema = z.object({
+  header: resourceHeaderSchema,
+  resources: z.array(resourceSchema),
 });
-export type ResourceFileJSON = z.infer<typeof resourceFileJsonSchema>;
+export type ResourceFileJSON = z.infer<typeof resourceFileSchema>;
 
 /** Model types that can validate and hydrate from JSON; `.tres` text via the serializer module (`SerializerResult`). */
 export interface Serializable {
@@ -177,7 +177,7 @@ export class ResourceTypeModifier implements Serializable {
   }
 
   static fromJSON(raw: string | unknown): ResourceTypeModifier {
-    const parsed = resourceTypeModifierJsonSchema.safeParse(parseJson(raw));
+    const parsed = resourceTypeModifierSchema.safeParse(parseJson(raw));
     if (!parsed.success) {
       throw new Error(`Invalid ResourceTypeModifier in JSON. ${zodParseErrorMessage(parsed.error)}`);
     }
@@ -190,7 +190,7 @@ export class ResourceTypeModifier implements Serializable {
   }
 
   validate(): Issue[] {
-    const r = resourceTypeModifierJsonSchema.safeParse({ name: this.name, value: this.value });
+    const r = resourceTypeModifierSchema.safeParse({ name: this.name, value: this.value });
     if (!r.success) {
       return [createIssue(ErrorCode.SchemaValidationFailed, formatZodError(r.error))];
     }
@@ -209,7 +209,7 @@ export class ResourceProperty implements Serializable {
   }
 
   static fromJSON(raw: string | unknown): ResourceProperty {
-    const parsed = resourcePropertyJsonSchema.safeParse(parseJson(raw));
+    const parsed = resourcePropertySchema.safeParse(parseJson(raw));
     if (!parsed.success) {
       throw new Error(`Invalid ResourceProperty in JSON. ${zodParseErrorMessage(parsed.error)}`);
     }
@@ -222,7 +222,7 @@ export class ResourceProperty implements Serializable {
   }
 
   validate(): Issue[] {
-    const r = resourcePropertyJsonSchema.safeParse({ name: this.name, value: this.value });
+    const r = resourcePropertySchema.safeParse({ name: this.name, value: this.value });
     if (!r.success) {
       return [createIssue(ErrorCode.SchemaValidationFailed, formatZodError(r.error))];
     }
@@ -241,7 +241,7 @@ export class ResourceHeader implements Serializable {
   }
 
   static fromJSON(raw: string | unknown): ResourceHeader {
-    const parsed = resourceHeaderJsonSchema.safeParse(parseJson(raw));
+    const parsed = resourceHeaderSchema.safeParse(parseJson(raw));
     if (!parsed.success) {
       throw new Error(`Invalid ResourceHeader in JSON. ${zodParseErrorMessage(parsed.error)}`);
     }
@@ -289,7 +289,7 @@ export class Resource implements Serializable {
   }
 
   static fromJSON(raw: string | unknown): Resource {
-    const parsed = resourceJsonSchema.safeParse(parseJson(raw));
+    const parsed = resourceSchema.safeParse(parseJson(raw));
     if (!parsed.success) {
       throw new Error(`Invalid Resource in JSON. ${zodParseErrorMessage(parsed.error)}`);
     }
@@ -369,7 +369,7 @@ export class ResourceFile implements Serializable {
     const { header, resources } = top.data;
 
     let rh: ResourceHeader | undefined;
-    const hr = resourceHeaderJsonSchema.safeParse(header);
+    const hr = resourceHeaderSchema.safeParse(header);
     if (!hr.success) {
       errors.push(`header: ${zodParseErrorMessage(hr.error)}`);
     } else {
@@ -381,7 +381,7 @@ export class ResourceFile implements Serializable {
 
     const resList: Resource[] = [];
     resources.forEach((r, i) => {
-      const rr = resourceJsonSchema.safeParse(r);
+      const rr = resourceSchema.safeParse(r);
       if (!rr.success) {
         errors.push(`resources[${i}]: ${zodParseErrorMessage(rr.error)}`);
       } else {

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "pattern": "^res:\\/\\/.*"
+        },
+        {
+          "type": "string",
+          "pattern": "^uid:\\/\\/.*"
+        },
+        {
+          "type": "string",
+          "pattern": "^id:\\/\\/.*"
+        },
+        {
+          "type": "string",
+          "pattern": "^ExtResource\\s*\\("
+        },
+        {
+          "type": "string",
+          "pattern": "^SubResource\\s*\\("
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "items"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}
