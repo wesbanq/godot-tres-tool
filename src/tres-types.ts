@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { coreValidationMessages } from './errors';
+import {
+  coreValidationMessages,
+  createIssue,
+  createIssueFromCoreValidationMessage,
+  ErrorCode,
+  type Issue,
+  IssueSeverity,
+} from './errors';
 
 /** Literal values accepted in `[...]` header type position (single source for Zod + sets). */
 export const RESOURCE_TYPE_VALUES = ['resource', 'sub_resource', 'ext_resource', 'gd_resource'] as const;
@@ -20,20 +27,72 @@ export type ResourceId = z.infer<typeof resourceIdSchema>;
 export const resourceResSchema = z.string().startsWith('res://');
 export type ResourceRes = z.infer<typeof resourceResSchema>;
 
-/** Check if a value is a ResourceRes. */
-export function isResourceRes(value: unknown): value is ResourceRes {
-  return resourceResSchema.safeParse(value).success;
+/** Any string property literal (Godot RHS text, including quoted segments stripped by the parser). */
+export const propertyStringSchema = z.string();
+export type PropertyString = z.infer<typeof propertyStringSchema>;
+
+export const propertyNumberSchema = z.number();
+export type PropertyNumber = z.infer<typeof propertyNumberSchema>;
+
+export const propertyBooleanSchema = z.boolean();
+export type PropertyBoolean = z.infer<typeof propertyBooleanSchema>;
+
+export const propertyNullSchema = z.null();
+export type PropertyNull = z.infer<typeof propertyNullSchema>;
+
+export const propertyResSchema = resourceResSchema;
+export type PropertyRes = z.infer<typeof propertyResSchema>;
+
+export const propertyUidSchema = resourceUidSchema;
+export type PropertyUid = z.infer<typeof propertyUidSchema>;
+
+export const propertyIdSchema = resourceIdSchema;
+export type PropertyId = z.infer<typeof propertyIdSchema>;
+
+/** `ExtResource("id")` constructor text as stored after parsing or in JSON. */
+export const propertyExtResourceSchema = z.string().regex(/^ExtResource\s*\(/i);
+export type PropertyExtResource = z.infer<typeof propertyExtResourceSchema>;
+
+/** `SubResource("id")` constructor text as stored after parsing or in JSON. */
+export const propertySubResourceSchema = z.string().regex(/^SubResource\s*\(/i);
+export type PropertySubResource = z.infer<typeof propertySubResourceSchema>;
+
+/** Non-recursive property atoms (everything except structured `Array[...]([...])` JSON). */
+export const propertyValueBaseSchema = z.union([
+  propertyNullSchema,
+  propertyBooleanSchema,
+  propertyNumberSchema,
+  propertyResSchema,
+  propertyUidSchema,
+  propertyIdSchema,
+  propertyExtResourceSchema,
+  propertySubResourceSchema,
+  propertyStringSchema,
+]);
+
+/** Structured typed array (JSON); serializes to Godot `Array[type]([...])`. Recursive via {@link PropertyValue}. */
+export interface PropertyArray {
+  type: PropertyValue;
+  items: PropertyValue[];
 }
 
-/** Check if a value is a ResourceUid. */
-export function isResourceUid(value: unknown): value is ResourceUid {
-  return resourceUidSchema.safeParse(value).success;
-}
+/**
+ * JSON / in-memory value for a resource property line. Leaf variants match
+ * {@link propertyValueBaseSchema}; the array branch is recursive (TypeScript cannot infer a
+ * mutually recursive `z.lazy` pair without `any`, so the schema is annotated with this type).
+ */
+export type PropertyValue = z.infer<typeof propertyValueBaseSchema> | PropertyArray;
 
-/** Check if a value is a ResourceId. */
-export function isResourceId(value: unknown): value is ResourceId {
-  return resourceIdSchema.safeParse(value).success;
-}
+/** Full property value schema (recursive). */
+export const propertyValueSchema: z.ZodType<PropertyValue> = z.lazy(() =>
+  z.union([
+    propertyValueBaseSchema,
+    z.object({
+      type: z.lazy(() => propertyValueSchema),
+      items: z.array(z.lazy(() => propertyValueSchema)),
+    }),
+  ])
+);
 
 /** Flatten a Zod error into a single human-readable line (paths + messages). */
 export function formatZodError(err: z.ZodError): string {
@@ -70,9 +129,7 @@ export type ResourceTypeModifierJSON = z.infer<typeof resourceTypeModifierJsonSc
 /** One `key = value` line under a resource block; `value` mirrors JSON/Godot (primitives or nested structures). */
 export const resourcePropertyJsonSchema = z.object({
   name: z.string().min(1, 'Resource property name is empty.'),
-  value: z.unknown().refine((v) => v !== undefined, {
-    message: 'Resource property value is undefined.',
-  }),
+  value: propertyValueSchema,
 });
 export type ResourcePropertyJSON = z.infer<typeof resourcePropertyJsonSchema>;
 
@@ -97,9 +154,10 @@ export const resourceFileJsonSchema = z.object({
 });
 export type ResourceFileJSON = z.infer<typeof resourceFileJsonSchema>;
 
-/** Model types that can validate and hydrate from JSON; `.tres` text is produced by `serializer.serializeToTres` / `serializeResourceFile`. */
+/** Model types that can validate and hydrate from JSON; `.tres` text via the serializer module (`SerializerResult`). */
 export interface Serializable {
-  validate(): void;
+  /** Schema and shape checks; empty array means no problems. Intended for the analyzer (or explicit checks)—not for serialization. */
+  validate(): Issue[];
   fromJSON(raw: string | unknown): Serializable;
 }
 
@@ -125,7 +183,6 @@ export class ResourceTypeModifier implements Serializable {
   constructor(name: string, value: string) {
     this.name = name;
     this.value = value;
-    this.validate();
   }
 
   static fromJSON(raw: string | unknown): ResourceTypeModifier {
@@ -141,20 +198,21 @@ export class ResourceTypeModifier implements Serializable {
     return ResourceTypeModifier.fromJSON(raw);
   }
 
-  validate(): void {
+  validate(): Issue[] {
     const r = resourceTypeModifierJsonSchema.safeParse({ name: this.name, value: this.value });
     if (!r.success) {
-      throw new Error(r.error.issues[0]?.message ?? 'Invalid ResourceTypeModifier.');
+      return [createIssue(ErrorCode.SchemaValidationFailed, formatZodError(r.error))];
     }
+    return [];
   }
 }
 
 /** One `key = value` line under a resource block; `value` mirrors JSON/Godot (primitives or nested structures). */
 export class ResourceProperty implements Serializable {
   name: string;
-  value: any;
+  value: PropertyValue;
 
-  constructor(name: string, value: any) {
+  constructor(name: string, value: PropertyValue) {
     this.name = name;
     this.value = value;
   }
@@ -172,11 +230,12 @@ export class ResourceProperty implements Serializable {
     return ResourceProperty.fromJSON(raw);
   }
 
-  validate(): void {
+  validate(): Issue[] {
     const r = resourcePropertyJsonSchema.safeParse({ name: this.name, value: this.value });
     if (!r.success) {
-      throw new Error(r.error.issues[0]?.message ?? 'Invalid ResourceProperty.');
+      return [createIssue(ErrorCode.SchemaValidationFailed, formatZodError(r.error))];
     }
+    return [];
   }
 }
 
@@ -188,7 +247,6 @@ export class ResourceHeader implements Serializable {
   constructor(type: ResourceType, modifiers: ResourceTypeModifier[]) {
     this.type = type;
     this.modifiers = modifiers;
-    this.validate();
   }
 
   static fromJSON(raw: string | unknown): ResourceHeader {
@@ -215,14 +273,17 @@ export class ResourceHeader implements Serializable {
     this.modifiers.push(modifier);
   }
 
-  validate(): void {
-    const r = resourceHeaderJsonSchema.safeParse({
-      type: this.type,
-      modifiers: this.modifiers.map((m) => ({ name: m.name, value: m.value })),
-    });
-    if (!r.success) {
-      throw new Error(r.error.issues[0]?.message ?? 'Invalid ResourceHeader.');
+  validate(): Issue[] {
+    const issues: Issue[] = [];
+    if (this.type.length === 0) {
+      issues.push(createIssue(ErrorCode.ResourceHeaderTypeEmpty));
+    } else if (!resourceTypeSchema.safeParse(this.type).success) {
+      issues.push(createIssue(ErrorCode.UnknownResourceHeaderType, this.type));
     }
+    for (const mod of this.modifiers) {
+      issues.push(...mod.validate());
+    }
+    return issues;
   }
 }
 
@@ -256,9 +317,8 @@ export class Resource implements Serializable {
     return this.properties.find((property) => property.name === name);
   }
 
-  validate(): void {
-    this.header.validate();
-    this.properties.forEach((property) => property.validate());
+  validate(): Issue[] {
+    return [...this.header.validate(), ...this.properties.flatMap((property) => property.validate())];
   }
 }
 
@@ -267,20 +327,16 @@ export class ResourceFile implements Serializable {
   header: ResourceHeader;
   resources: Resource[];
 
-  constructor(header: ResourceHeader, resources: Resource[], options?: { skipValidation?: boolean }) {
+  constructor(header: ResourceHeader, resources: Resource[]) {
     this.header = header;
     this.resources = resources;
-    if (!options?.skipValidation) {
-      this.validate();
-    }
   }
 
   /**
-   * Assemble a file parsed from `.tres` text without {@link ResourceFile.validate}.
-   * Validate separately (e.g. CLI analyzer) before relying on document invariants.
+   * Assemble a file parsed from `.tres` text. Call {@link ResourceFile.validate} or the analyzer before relying on invariants.
    */
   static fromParsedTres(header: ResourceHeader, resources: Resource[]): ResourceFile {
-    return new ResourceFile(header, resources, { skipValidation: true });
+    return new ResourceFile(header, resources);
   }
 
   /**
@@ -346,12 +402,13 @@ export class ResourceFile implements Serializable {
       return { errors };
     }
 
-    const val = ResourceFile.collectValidationErrors(rh!, resList);
-    if (val.length > 0) {
-      return { errors: val };
+    const file = new ResourceFile(rh!, resList);
+    const valIssues = file.validate().filter((i) => i.severity === IssueSeverity.Error);
+    if (valIssues.length > 0) {
+      return { errors: valIssues.map((i) => i.message) };
     }
 
-    return { file: new ResourceFile(rh!, resList), errors: [] };
+    return { file, errors: [] };
   }
 
   fromJSON(raw: string | unknown): Serializable {
@@ -360,7 +417,6 @@ export class ResourceFile implements Serializable {
 
   insertResource(res: Resource): void {
     this.resources.push(res);
-    this.validate();
   }
 
   toJSON(minified: boolean = false): string {
@@ -394,10 +450,15 @@ export class ResourceFile implements Serializable {
     return errors;
   }
 
-  validate(): void {
-    const errors = ResourceFile.collectValidationErrors(this.header, this.resources);
-    if (errors.length > 0) {
-      throw new Error(errors[0]);
+  validate(): Issue[] {
+    const issues: Issue[] = [];
+    for (const msg of ResourceFile.collectValidationErrors(this.header, this.resources)) {
+      issues.push(createIssueFromCoreValidationMessage(msg));
     }
+    issues.push(...this.header.validate());
+    for (const resource of this.resources) {
+      issues.push(...resource.validate());
+    }
+    return issues;
   }
 }
