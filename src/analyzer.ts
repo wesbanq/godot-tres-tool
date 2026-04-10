@@ -1,24 +1,23 @@
 import { z } from 'zod'
 import * as types from './tres-types'
+import {
+  coreValidationMessages,
+  createIssue,
+  createIssueFromCoreValidationMessage,
+  ErrorCode,
+  IssueSeverity,
+  issueSchema,
+  type Issue,
+} from './errors'
 
-export enum IssueSeverity {
-  Info,
-  Warning,
-  Error,
-}
-
-export const issueSeveritySchema = z.union([
-  z.literal(IssueSeverity.Info),
-  z.literal(IssueSeverity.Warning),
-  z.literal(IssueSeverity.Error),
-])
-
-export const issueSchema = z.object({
-  severity: issueSeveritySchema,
-  message: z.string().min(1),
-})
-
-export type Issue = z.infer<typeof issueSchema>
+export {
+  ErrorCode,
+  createIssue,
+  createIssueFromCoreValidationMessage,
+  IssueSeverity,
+  issueSchema,
+  type Issue,
+} from './errors'
 
 export const analyzerSettingsSchema = z
   .object({
@@ -36,18 +35,15 @@ function mergeSettings(settings: AnalyzerSettings | undefined): AnalyzerSettings
   return analyzerSettingsSchema.parse(settings ?? {})
 }
 
-const MSG_BASE_NOT_GD_RESOURCE = 'Base header is not a gd_resource.'
-const MSG_MULTIPLE_GD_RESOURCE = 'Multiple gd_resource headers found in file.'
-
 /** Root must be `gd_resource`; no inner block may repeat `gd_resource`. */
 function collectGdResourceLayoutIssues(file: types.ResourceFile, settings: AnalyzerSettings): Issue[] {
   const issues: Issue[] = []
   if (file.header.type !== 'gd_resource') {
-    issues.push({ severity: IssueSeverity.Error, message: MSG_BASE_NOT_GD_RESOURCE })
+    issues.push(createIssue(ErrorCode.BaseNotGdResource))
   }
   const innerHasGdResource = file.resources.some((res) => res.header.type === 'gd_resource')
   if (innerHasGdResource && !settings.ignoreMultipleGdResource) {
-    issues.push({ severity: IssueSeverity.Error, message: MSG_MULTIPLE_GD_RESOURCE })
+    issues.push(createIssue(ErrorCode.MultipleGdResourceInner))
   }
   return issues
 }
@@ -57,10 +53,10 @@ function collectCoreDocumentIssues(file: types.ResourceFile, settings: AnalyzerS
   const messages = types.ResourceFile.collectValidationErrors(file.header, file.resources)
   const issues: Issue[] = []
   for (const msg of messages) {
-    if (settings.ignoreFormat && msg === 'Base resource header has no format modifier.') {
+    if (settings.ignoreFormat && msg === coreValidationMessages.baseMissingFormatModifier) {
       continue
     }
-    issues.push({ severity: IssueSeverity.Error, message: msg })
+    issues.push(createIssueFromCoreValidationMessage(msg))
   }
   return issues
 }
@@ -80,10 +76,7 @@ function analyzeRootHeader(header: types.ResourceHeader, settings: AnalyzerSetti
   }
   const parsed = types.godotResourceFormatSchema.safeParse(formatMod.value)
   if (!parsed.success) {
-    issues.push({
-      severity: IssueSeverity.Error,
-      message: types.formatZodError(parsed.error),
-    })
+    issues.push(createIssue(ErrorCode.SchemaValidationFailed, types.formatZodError(parsed.error)))
   }
   return issues
 }
@@ -91,17 +84,14 @@ function analyzeRootHeader(header: types.ResourceHeader, settings: AnalyzerSetti
 function analyzeEmbeddedHeader(header: types.ResourceHeader): Issue[] {
   const issues: Issue[] = []
   if (header.type.length === 0) {
-    issues.push({ severity: IssueSeverity.Error, message: 'Resource header type is empty.' })
+    issues.push(createIssue(ErrorCode.ResourceHeaderTypeEmpty))
   } else if (!types.resourceTypeSchema.safeParse(header.type).success) {
-    issues.push({
-      severity: IssueSeverity.Warning,
-      message: `Unknown resource header type "${header.type}".`,
-    })
+    issues.push(createIssue(ErrorCode.UnknownResourceHeaderType, header.type))
   }
   for (const mod of header.modifiers) {
     const r = types.resourceTypeModifierJsonSchema.safeParse({ name: mod.name, value: mod.value })
     if (!r.success) {
-      issues.push({ severity: IssueSeverity.Error, message: types.formatZodError(r.error) })
+      issues.push(createIssue(ErrorCode.SchemaValidationFailed, types.formatZodError(r.error)))
     }
   }
   return issues
@@ -113,7 +103,7 @@ function analyzeResource(resource: types.Resource): Issue[] {
   for (const prop of resource.properties) {
     const r = types.resourcePropertyJsonSchema.safeParse({ name: prop.name, value: prop.value })
     if (!r.success) {
-      issues.push({ severity: IssueSeverity.Error, message: types.formatZodError(r.error) })
+      issues.push(createIssue(ErrorCode.SchemaValidationFailed, types.formatZodError(r.error)))
     }
   }
   return issues
@@ -122,12 +112,12 @@ function analyzeResource(resource: types.Resource): Issue[] {
 function analyzeRootHeaderShape(header: types.ResourceHeader, settings: AnalyzerSettings): Issue[] {
   const issues: Issue[] = []
   if (header.type.length === 0) {
-    issues.push({ severity: IssueSeverity.Error, message: 'Resource header type is empty.' })
+    issues.push(createIssue(ErrorCode.ResourceHeaderTypeEmpty))
   }
   for (const mod of header.modifiers) {
     const r = types.resourceTypeModifierJsonSchema.safeParse({ name: mod.name, value: mod.value })
     if (!r.success) {
-      issues.push({ severity: IssueSeverity.Error, message: types.formatZodError(r.error) })
+      issues.push(createIssue(ErrorCode.SchemaValidationFailed, types.formatZodError(r.error)))
     }
   }
   issues.push(...analyzeRootHeader(header, settings))

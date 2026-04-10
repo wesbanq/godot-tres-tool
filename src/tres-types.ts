@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { coreValidationMessages } from './errors';
 
 /** Literal values accepted in `[...]` header type position (single source for Zod + sets). */
 export const RESOURCE_TYPE_VALUES = ['resource', 'sub_resource', 'ext_resource', 'gd_resource'] as const;
@@ -442,10 +443,10 @@ export class ResourceFile implements Serializable {
   static collectValidationErrors(header: ResourceHeader, resources: Resource[]): string[] {
     const errors: string[] = [];
     if (resources.length === 0) {
-      errors.push('No resources found in file.');
+      errors.push(coreValidationMessages.noResourcesInFile);
     }
     if (header.modifiers.find((modifier) => modifier.name === 'format') === undefined) {
-      errors.push('Base resource header has no format modifier.');
+      errors.push(coreValidationMessages.baseMissingFormatModifier);
     }
     return errors;
   }

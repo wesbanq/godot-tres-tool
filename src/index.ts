@@ -6,13 +6,14 @@ import fs from 'fs';
 import path from 'node:path';
 import { z, ZodError } from 'zod';
 import * as analyzer from './analyzer';
+import { IssueSeverity } from './errors';
 import * as parser from './parser';
 import * as types from './tres-types';
 import * as tools from './tools';
 
 function requireAnalyzerClean(file: types.ResourceFile): void {
   const issues = analyzer.analyzeResourceFile(file);
-  const errors = issues.filter((i) => i.severity === analyzer.IssueSeverity.Error);
+  const errors = issues.filter((i) => i.severity === IssueSeverity.Error);
   if (errors.length > 0) {
     throw new parser.ParseAggregateError(errors.map((e) => e.message));
   }
