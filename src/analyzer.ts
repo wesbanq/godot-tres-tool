@@ -3,7 +3,6 @@ import * as types from './tres-types'
 import {
   coreValidationMessages,
   createIssue,
-  createIssueFromCoreValidationMessage,
   ErrorCode,
   IssueSeverity,
   issueSchema,
@@ -48,24 +47,18 @@ function collectGdResourceLayoutIssues(file: types.ResourceFile, settings: Analy
   return issues
 }
 
-/** Rules shared with {@link types.ResourceFile.collectValidationErrors} (format / non-empty body). */
-function collectCoreDocumentIssues(file: types.ResourceFile, settings: AnalyzerSettings): Issue[] {
-  const messages = types.ResourceFile.collectValidationErrors(file.header, file.resources)
-  const issues: Issue[] = []
-  for (const msg of messages) {
-    if (settings.ignoreFormat && msg === coreValidationMessages.baseMissingFormatModifier) {
-      continue
-    }
-    issues.push(createIssueFromCoreValidationMessage(msg))
+function filterIssuesForSettings(issues: Issue[], settings: AnalyzerSettings): Issue[] {
+  if (!settings.ignoreFormat) {
+    return issues
   }
-  return issues
+  return issues.filter((i) => i.message !== coreValidationMessages.baseMissingFormatModifier)
 }
 
 /**
  * Root header: optional strict check that `format` is an integer from 1–3 when present.
- * A missing `format` is reported via {@link types.ResourceFile.collectValidationErrors} (unless ignored).
+ * A missing `format` is reported via {@link types.ResourceFile.validate} (unless filtered by settings).
  */
-function analyzeRootHeader(header: types.ResourceHeader, settings: AnalyzerSettings): Issue[] {
+function analyzeRootHeaderFormat(header: types.ResourceHeader, settings: AnalyzerSettings): Issue[] {
   const issues: Issue[] = []
   if (settings.ignoreFormat) {
     return issues
@@ -81,62 +74,17 @@ function analyzeRootHeader(header: types.ResourceHeader, settings: AnalyzerSetti
   return issues
 }
 
-function analyzeEmbeddedHeader(header: types.ResourceHeader): Issue[] {
-  const issues: Issue[] = []
-  if (header.type.length === 0) {
-    issues.push(createIssue(ErrorCode.ResourceHeaderTypeEmpty))
-  } else if (!types.resourceTypeSchema.safeParse(header.type).success) {
-    issues.push(createIssue(ErrorCode.UnknownResourceHeaderType, header.type))
-  }
-  for (const mod of header.modifiers) {
-    const r = types.resourceTypeModifierJsonSchema.safeParse({ name: mod.name, value: mod.value })
-    if (!r.success) {
-      issues.push(createIssue(ErrorCode.SchemaValidationFailed, types.formatZodError(r.error)))
-    }
-  }
-  return issues
-}
-
-function analyzeResource(resource: types.Resource): Issue[] {
-  const issues: Issue[] = []
-  issues.push(...analyzeEmbeddedHeader(resource.header))
-  for (const prop of resource.properties) {
-    const r = types.resourcePropertyJsonSchema.safeParse({ name: prop.name, value: prop.value })
-    if (!r.success) {
-      issues.push(createIssue(ErrorCode.SchemaValidationFailed, types.formatZodError(r.error)))
-    }
-  }
-  return issues
-}
-
-function analyzeRootHeaderShape(header: types.ResourceHeader, settings: AnalyzerSettings): Issue[] {
-  const issues: Issue[] = []
-  if (header.type.length === 0) {
-    issues.push(createIssue(ErrorCode.ResourceHeaderTypeEmpty))
-  }
-  for (const mod of header.modifiers) {
-    const r = types.resourceTypeModifierJsonSchema.safeParse({ name: mod.name, value: mod.value })
-    if (!r.success) {
-      issues.push(createIssue(ErrorCode.SchemaValidationFailed, types.formatZodError(r.error)))
-    }
-  }
-  issues.push(...analyzeRootHeader(header, settings))
-  return issues
-}
-
 /**
  * Check structural and basic semantic constraints of a {@link types.ResourceFile}.
  * Does not read `.tres` text; only inspects the in-memory model (independent of the parser).
+ * Runs {@link types.ResourceFile.validate} plus layout and root `format` range rules.
  */
 export function analyzeResourceFile(resourceFile: types.ResourceFile, settings?: AnalyzerSettings): Issue[] {
   const s = mergeSettings(settings)
   const issues: Issue[] = []
   issues.push(...collectGdResourceLayoutIssues(resourceFile, s))
-  issues.push(...collectCoreDocumentIssues(resourceFile, s))
-  issues.push(...analyzeRootHeaderShape(resourceFile.header, s))
-  for (const resource of resourceFile.resources) {
-    issues.push(...analyzeResource(resource))
-  }
+  issues.push(...filterIssuesForSettings(resourceFile.validate(), s))
+  issues.push(...analyzeRootHeaderFormat(resourceFile.header, s))
   return issues
 }
 

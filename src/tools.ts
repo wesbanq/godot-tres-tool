@@ -14,14 +14,14 @@ function replaceInStringProperties(resources: types.Resource[], oldNeedle: strin
 
 export function changeResPath(
   resourceFile: types.ResourceFile,
-  oldPath: types.ResourceRes,
-  newPath: types.ResourceRes
+  oldPath: types.PropertyRes,
+  newPath: types.PropertyRes
 ): types.ResourceFile {
-  const from = types.resourceResSchema.parse(oldPath)
-  const to = types.resourceResSchema.parse(newPath)
+  const from = types.propertyResSchema.parse(oldPath)
+  const to = types.propertyResSchema.parse(newPath)
   for (const resource of resourceFile.resources) {
     for (const modifier of resource.header.modifiers) {
-      if (types.isResourceRes(modifier.value)) {
+      if (types.propertyResSchema.safeParse(modifier.value).success) {
         if (modifier.value === from) {
           modifier.value = to
         }
@@ -34,14 +34,14 @@ export function changeResPath(
 
 export function changeId(
   resourceFile: types.ResourceFile,
-  oldId: types.ResourceId,
-  newId: types.ResourceId
+  oldId: types.PropertyId,
+  newId: types.PropertyId
 ): types.ResourceFile {
-  const from = types.resourceIdSchema.parse(oldId)
-  const to = types.resourceIdSchema.parse(newId)
+  const from = types.propertyIdSchema.parse(oldId)
+  const to = types.propertyIdSchema.parse(newId)
   for (const resource of resourceFile.resources) {
     for (const modifier of resource.header.modifiers) {
-      if (types.isResourceId(modifier.value)) {
+      if (types.propertyIdSchema.safeParse(modifier.value).success) {
         if (modifier.value === from) {
           modifier.value = to
         }
@@ -54,14 +54,14 @@ export function changeId(
 
 export function changeUid(
   resourceFile: types.ResourceFile,
-  oldUid: types.ResourceUid,
-  newUid: types.ResourceUid
+  oldUid: types.PropertyUid,
+  newUid: types.PropertyUid
 ): types.ResourceFile {
-  const from = types.resourceUidSchema.parse(oldUid)
-  const to = types.resourceUidSchema.parse(newUid)
+  const from = types.propertyUidSchema.parse(oldUid)
+  const to = types.propertyUidSchema.parse(newUid)
   for (const resource of resourceFile.resources) {
     for (const modifier of resource.header.modifiers) {
-      if (types.isResourceUid(modifier.value)) {
+      if (types.propertyUidSchema.safeParse(modifier.value).success) {
         if (modifier.value === from) {
           modifier.value = to
         }

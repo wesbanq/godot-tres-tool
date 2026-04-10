@@ -15,18 +15,6 @@ export const RESOURCE_TYPE_VALUES = ['resource', 'sub_resource', 'ext_resource',
 export const resourceTypeSchema = z.enum(RESOURCE_TYPE_VALUES);
 export type ResourceType = z.infer<typeof resourceTypeSchema>;
 
-/** Godot unique-id reference (`uid://...`). */
-export const resourceUidSchema = z.string().startsWith('uid://');
-export type ResourceUid = z.infer<typeof resourceUidSchema>;
-
-/** In-file resource id (`id://...`). */
-export const resourceIdSchema = z.string().startsWith('id://');
-export type ResourceId = z.infer<typeof resourceIdSchema>;
-
-/** Project path reference (`res://...`). */
-export const resourceResSchema = z.string().startsWith('res://');
-export type ResourceRes = z.infer<typeof resourceResSchema>;
-
 /** Any string property literal (Godot RHS text, including quoted segments stripped by the parser). */
 export const propertyStringSchema = z.string();
 export type PropertyString = z.infer<typeof propertyStringSchema>;
@@ -40,13 +28,16 @@ export type PropertyBoolean = z.infer<typeof propertyBooleanSchema>;
 export const propertyNullSchema = z.null();
 export type PropertyNull = z.infer<typeof propertyNullSchema>;
 
-export const propertyResSchema = resourceResSchema;
+/** Project path reference (`res://...`). */
+export const propertyResSchema = z.string().startsWith('res://');
 export type PropertyRes = z.infer<typeof propertyResSchema>;
 
-export const propertyUidSchema = resourceUidSchema;
+/** Godot unique-id reference (`uid://...`). */
+export const propertyUidSchema = z.string().startsWith('uid://');
 export type PropertyUid = z.infer<typeof propertyUidSchema>;
 
-export const propertyIdSchema = resourceIdSchema;
+/** In-file resource id (`id://...`). */
+export const propertyIdSchema = z.string().startsWith('id://');
 export type PropertyId = z.infer<typeof propertyIdSchema>;
 
 /** `ExtResource("id")` constructor text as stored after parsing or in JSON. */

@@ -5,20 +5,9 @@ import cac from 'cac'
 import fs from 'fs';
 import path from 'node:path';
 import { z, ZodError } from 'zod';
-import * as analyzer from './analyzer';
-import { IssueSeverity } from './errors';
 import * as parser from './parser';
 import * as serializer from './serializer';
 import * as types from './tres-types';
-import * as tools from './tools';
-
-function requireAnalyzerClean(file: types.ResourceFile): void {
-  const issues = analyzer.analyzeResourceFile(file);
-  const errors = issues.filter((i) => i.severity === IssueSeverity.Error);
-  if (errors.length > 0) {
-    throw new parser.ParseAggregateError(errors.map((e) => e.message));
-  }
-}
 
 const existingFilePathSchema = z
   .string()
@@ -29,8 +18,6 @@ const existingFilePathSchema = z
 function validatePath(filePath: string): void {
   existingFilePathSchema.parse(filePath);
 }
-
-const changeResPathsSchema = z.tuple([types.resourceResSchema, types.resourceResSchema]);
 
 /** Logical basename for {@link resolveConvertedOutputPath} when input is stdin. */
 const STDIN_LOGICAL_PATH = 'stdin';
@@ -104,9 +91,9 @@ cli.command('json [path]', 'Convert a .tres file to a JSON file (stdin if path o
   .option('-o, --output <path>', 'Output to a specific path')
   .action((path: string | undefined, options) => {
     const { content, outPath } = readCliInput(path, options.output, '.json');
-    const file = parser.parseResourceContent(content);
-    requireAnalyzerClean(file);
+    const file = parser.parseResourceContentStrict(content);
     let text = file.toJSON(options.minified);
+
     if (options.stdout || outPath === undefined) {
       console.log(text);
     } else {
@@ -119,28 +106,15 @@ cli.command('tres [path]', 'Convert a JSON file to a .tres file (stdin if path o
   .option('-o, --output <path>', 'Output to a specific path')
   .action((path: string | undefined, options) => {
     const { content, outPath } = readCliInput(path, options.output, '.tres');
-    const { errors, file } = serializer.deserializeResourceFileFromJsonWithErrors(content);
-    if (errors.length > 0) {
-      throw new parser.ParseAggregateError(errors);
+    const fromJson = serializer.deserializeResourceFileFromJson(content);
+    if (!fromJson.ok) {
+      throw new parser.ParseAggregateError(fromJson.issues.map((i) => i.message));
     }
-    requireAnalyzerClean(file!);
-    const text = serializer.serializeResourceFile(file!);
-    if (options.stdout || outPath === undefined) {
-      console.log(text);
-    } else {
-      fs.writeFileSync(outPath, text);
+    const toTres = serializer.serializeResourceFile(fromJson.value);
+    if (!toTres.ok) {
+      throw new parser.ParseAggregateError(toTres.issues.map((i) => i.message));
     }
-  });
-
-cli.command('change-res [file] <oldPath> <newPath>', 'Change the res path of a resource file')
-  .option('-o, --output <path>', 'Output to a specific path')
-  .action((file, oldPath, newPath, options) => {
-    const { content, outPath } = readCliInput(file, options.output, '.tres');
-    const [from, to] = changeResPathsSchema.parse([oldPath, newPath]);
-    const parsedFile = parser.parseResourceContent(content);
-    requireAnalyzerClean(parsedFile);
-    const newFile = tools.changeResPath(parsedFile, from, to);
-    const text = serializer.serializeResourceFile(newFile);
+    const text = toTres.value;
     if (options.stdout || outPath === undefined) {
       console.log(text);
     } else {
@@ -149,7 +123,7 @@ cli.command('change-res [file] <oldPath> <newPath>', 'Change the res path of a r
   });
 
 cli.help()
-cli.version('0.0.5')
+cli.version('0.1.0')
 
 try {
   cli.parse();
