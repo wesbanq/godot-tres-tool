@@ -407,7 +407,7 @@ export class ResourceFile implements Serializable {
   }
 
   toJSON(minified: boolean = false): string {
-    return JSON5.stringify(
+    return JSON.stringify(
       {
         header: this.header,
         resources: this.resources,

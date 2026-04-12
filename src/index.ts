@@ -96,12 +96,12 @@ function readCliInput(
 function resourceToJsonText(doc: types.ResourceFile | Record<string, unknown>, minified?: boolean): string {
   return doc instanceof types.ResourceFile
     ? doc.toJSON(!!minified)
-    : JSON5.stringify(doc, null, minified ? undefined : 2)
+    : JSON.stringify(doc, null, minified ? undefined : 2)
 }
 
 /**
  * Write CLI result: stdout when `--stdout` or no output path; otherwise UTF-8 file.
- * Raw `text` is written as-is. A resource `doc` becomes `.tres` via the serializer or pretty JSON5 otherwise.
+ * Raw `text` is written as-is. A resource `doc` becomes `.tres` via the serializer or pretty JSON otherwise.
  */
 function writeCliOutput(
   opts: { stdout?: boolean },
@@ -169,12 +169,12 @@ cli.command('get [path] <query>', 'Get data from a resource file')
       const { content } = readCliInput(path, options.output, '');
       const file = JSON5.parse(content);
       const data = JSONPath({ path: query, json: file });
-      console.log(JSON5.stringify(data, null, 2));
+      console.log(JSON.stringify(data, null, 2));
     } else {
       const { content } = readCliInput(path, options.output, '');
       const file = parser.parseResourceContentStrict(content);
       const data = JSONPath({ path: query, json: file });
-      console.log(JSON5.stringify(data, null, 2));
+      console.log(JSON.stringify(data, null, 2));
     }
   });
 
