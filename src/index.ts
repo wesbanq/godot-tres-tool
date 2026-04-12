@@ -90,60 +90,44 @@ function readCliInput(
   return { content, outPath, fromStdin };
 }
 
-interface JsonPathMatch {
-  path?: (string | number)[]
-  parent?: unknown
-  parentProperty?: string | number
+
+function resourceToJsonText(doc: types.ResourceFile | Record<string, unknown>, minified?: boolean): string {
+  return doc instanceof types.ResourceFile
+    ? doc.toJSON(!!minified)
+    : JSON5.stringify(doc, null, minified ? undefined : 2)
 }
 
 /**
- * Apply JSONPath matches in-place: remove array elements with `splice` (no `null` placeholders)
- * and remove object properties with `delete`. Nested arrays are updated before ancestor arrays
- * so indices stay meaningful; within one array, indices are removed high-to-low.
+ * Write CLI result: stdout when `--stdout` or no output path; otherwise UTF-8 file.
+ * Raw `text` is written as-is. A resource `doc` becomes `.tres` via the serializer or pretty JSON5 otherwise.
  */
-function removeJsonPathMatches(matches: JsonPathMatch[]): void {
-  const arrayGroups = new Map<unknown[], { indices: Set<number>; maxDepth: number }>()
-  const objectDeletes: { parent: Record<PropertyKey, unknown>; key: PropertyKey }[] = []
-
-  for (const m of matches) {
-    if (m.parent == null || m.parentProperty === undefined) {
-      continue
-    }
-    const { parent } = m
-    const prop = m.parentProperty
-
-    if (Array.isArray(parent)) {
-      const idx = typeof prop === 'number' ? prop : Number(prop)
-      if (!Number.isInteger(idx) || idx < 0 || idx >= parent.length) {
-        continue
-      }
-      let g = arrayGroups.get(parent)
-      if (g === undefined) {
-        g = { indices: new Set(), maxDepth: 0 }
-        arrayGroups.set(parent, g)
-      }
-      g.indices.add(idx)
-      const depth = Array.isArray(m.path) ? m.path.length : 0
-      if (depth > g.maxDepth) {
-        g.maxDepth = depth
-      }
-    } else if (typeof parent === 'object') {
-      objectDeletes.push({ parent: parent as Record<PropertyKey, unknown>, key: prop as PropertyKey })
-    }
+function writeCliOutput(
+  opts: { stdout?: boolean },
+  outPath: string | undefined,
+  payload: string | types.ResourceFile | Record<string, unknown>,
+  jsonFormat?: { minified?: boolean }
+): void {
+  const useStdout = !!opts.stdout || outPath === undefined
+  if (typeof payload === 'string') {
+    if (useStdout) console.log(payload)
+    else fs.writeFileSync(outPath!, payload, 'utf8')
+    return
   }
-
-  const sortedArrays = [...arrayGroups.entries()].sort((a, b) => b[1].maxDepth - a[1].maxDepth)
-
-  for (const [arr, { indices }] of sortedArrays) {
-    for (const i of [...indices].sort((x, y) => y - x)) {
-      if (i < arr.length) {
-        arr.splice(i, 1)
-      }
-    }
+  const doc = payload
+  if (useStdout) {
+    console.log(resourceToJsonText(doc, jsonFormat?.minified))
+    return
   }
-
-  for (const { parent, key } of objectDeletes) {
-    delete parent[key]
+  const ext = path.extname(outPath!).toLowerCase()
+  if (ext === '.tres') {
+    const file = doc instanceof types.ResourceFile ? doc : types.ResourceFile.fromJSON(doc as unknown)
+    const result = serializer.serializeResourceFile(file)
+    if (!result.ok) {
+      throw new parser.ParseAggregateError(result.issues.map((i) => i.message))
+    }
+    fs.writeFileSync(outPath!, result.value, 'utf8')
+  } else {
+    fs.writeFileSync(outPath!, resourceToJsonText(doc, jsonFormat?.minified), 'utf8')
   }
 }
 
@@ -151,24 +135,17 @@ const cli = cac();
 
 cli.option('-d, --debug', 'Show debug information', { default: false });
 cli.option('-s, --stdout', 'Output to stdout', { default: false });
+cli.option('-o, --output <path>', 'Output to a specific path', { default: undefined });
 
 cli.command('json [path]', 'Convert a .tres file to a JSON file (stdin if path omitted)')
   .option('-m, --minified', 'Minify the output')
-  .option('-o, --output <path>', 'Output to a specific path')
   .action((path: string | undefined, options) => {
     const { content, outPath } = readCliInput(path, options.output, '.json');
     const file = parser.parseResourceContentStrict(content);
-    let text = file.toJSON(options.minified);
-
-    if (options.stdout || outPath === undefined) {
-      console.log(text);
-    } else {
-      fs.writeFileSync(outPath, text);
-    }
+    writeCliOutput(options, outPath, file, { minified: options.minified })
   });
 
 cli.command('tres [path]', 'Convert a JSON file to a .tres file (stdin if path omitted)')
-  .option('-o, --output <path>', 'Output to a specific path')
   .action((path: string | undefined, options) => {
     const { content, outPath } = readCliInput(path, options.output, '.tres');
     const fromJson = serializer.deserializeResourceFileFromJson(content);
@@ -179,12 +156,7 @@ cli.command('tres [path]', 'Convert a JSON file to a .tres file (stdin if path o
     if (!toTres.ok) {
       throw new parser.ParseAggregateError(toTres.issues.map((i) => i.message));
     }
-    const text = toTres.value;
-    if (options.stdout || outPath === undefined) {
-      console.log(text);
-    } else {
-      fs.writeFileSync(outPath, text);
-    }
+    writeCliOutput(options, outPath, toTres.value)
   });
 
 cli.command('get [path] <query>', 'Get data from a resource file')
@@ -192,12 +164,12 @@ cli.command('get [path] <query>', 'Get data from a resource file')
     const isJSON = path === undefined || path.endsWith('.json');
 
     if (isJSON) {
-      const { content } = readCliInput(path, undefined, '');
+      const { content } = readCliInput(path, options.output, '');
       const file = JSON5.parse(content);
       const data = JSONPath({ path: query, json: file });
       console.log(JSON5.stringify(data, null, 2));
     } else {
-      const { content } = readCliInput(path, undefined, '');
+      const { content } = readCliInput(path, options.output, '');
       const file = parser.parseResourceContentStrict(content);
       const data = JSONPath({ path: query, json: file });
       console.log(JSON5.stringify(data, null, 2));
@@ -208,29 +180,36 @@ cli.command('delete [path] <query>', 'Delete data from a resource file')
   .action((path: string | undefined, query: string, options) => {
     const isJSON = path === undefined || path.endsWith('.json');
 
-    let outPath: string | undefined;
+    let out: string | undefined;
     let file: types.ResourceFile;
     if (isJSON) {
-      const { content, outPath: outPath } = readCliInput(path, undefined, '.json');
+      const { content, outPath } = readCliInput(path, options.output, '.json');
+      out = outPath;
       const parsed = types.resourceFileSchema.safeParse(JSON5.parse(content));
       if (!parsed.success) {
         zodParseErrorMessage(parsed.error);
       }
       file = parsed.data as types.ResourceFile;
     } else {
-      const { content, outPath: outPath } = readCliInput(path, undefined, '.tres');
+      const { content, outPath } = readCliInput(path, options.output, '.tres');
+      out = outPath;
       file = parser.parseResourceContentStrict(content);
     }
 
     const data = JSONPath({ path: query, json: file, resultType: 'all' });
-    removeJsonPathMatches(data)
+    data.sort((a: any, b: any) => {
+      const d = (b.path?.length ?? 0) - (a.path?.length ?? 0)
+      return d !== 0 ? d : a.parent === b.parent ? +String(b.parentProperty) - +String(a.parentProperty) : 0
+    })
+    for (const m of data) {
+      const p = m.parent
+      const k = m.parentProperty
+      if (p == null || k === undefined) continue;
+      Array.isArray(p) ? p.splice(+k, 1) : delete (p as Record<PropertyKey, unknown>)[k as PropertyKey]
+    }
     analyzeResourceFile(file);
 
-    if (options.stdout || outPath === undefined) {
-      console.log(file.toJSON());
-    } else {
-      fs.writeFileSync(outPath!, file.toJSON());
-    }
+    writeCliOutput(options, out, file);
     console.log(`Deleted ${data.length} entries from file.`);
   });
 
@@ -239,17 +218,19 @@ cli.command('set [path] <query> <value>', 'Set data in a resource file')
     const isJSON = path === undefined || path.endsWith('.json');
     const parsedValue = yaml.load(value);
 
-    let outPath: string | undefined;
+    let out: string | undefined;
     let file: types.ResourceFile;
     if (isJSON) {
-      const { content, outPath: outPath } = readCliInput(path, undefined, '.json');
+      const { content, outPath } = readCliInput(path, options.output, '.json');
+      out = outPath;
       const parsed = types.resourceFileSchema.safeParse(JSON5.parse(content));
       if (!parsed.success) {
         zodParseErrorMessage(parsed.error);
       }
       file = parsed.data as types.ResourceFile;
     } else {
-      const { content, outPath: outPath } = readCliInput(path, undefined, '.tres');
+      const { content, outPath } = readCliInput(path, options.output, '.tres');
+      out = outPath;
       file = parser.parseResourceContentStrict(content);
     }
 
@@ -259,11 +240,7 @@ cli.command('set [path] <query> <value>', 'Set data in a resource file')
     });
     analyzeResourceFile(file);
 
-    if (options.stdout || outPath === undefined) {
-      console.log(file.toJSON());
-    } else {
-      fs.writeFileSync(outPath!, file.toJSON());
-    }
+    writeCliOutput(options, out, file)
     console.log(`Set ${data.length} entries in file.`);
   });
 
@@ -272,38 +249,43 @@ cli.command('append [path] <query> <value>', 'Append data to a resource file')
     const isJSON = path === undefined || path.endsWith('.json');
     const parsedValue = yaml.load(value);
 
-    let outPath: string | undefined;
+    let out: string | undefined;
     let file: types.ResourceFile;
     if (isJSON) {
-      const { content, outPath: outPath } = readCliInput(path, undefined, '.json');
+      const { content, outPath } = readCliInput(path, options.output, '.json');
+      out = outPath;
       const parsed = types.resourceFileSchema.safeParse(JSON5.parse(content));
       if (!parsed.success) {
         zodParseErrorMessage(parsed.error);
       }
       file = parsed.data as types.ResourceFile;
     } else {
-      const { content, outPath: outPath } = readCliInput(path, undefined, '.tres');
+      const { content, outPath } = readCliInput(path, options.output, '.tres');
+      out = outPath;
       file = parser.parseResourceContentStrict(content);
     }
 
-    const data = JSONPath({ path: query, json: file });
-    if (data.length > 0) {
-      data[0].$append(value);
-    } else {
-      data.push(value);
+    const data = JSONPath({ path: query, json: file, resultType: 'all' });
+    if (!data.length) throw new Error('No matches for query.')
+    const seen = new Set<unknown[]>()
+    for (const m of data) {
+      const p = m.parent
+      const k = m.parentProperty
+      if (p == null || k === undefined) throw new Error('Invalid JSONPath match.')
+      const t = (Array.isArray(p) ? p[+k] : (p as Record<PropertyKey, unknown>)[k as PropertyKey]) as unknown
+      if (!Array.isArray(t)) throw new Error('Append target must be an array.')
+      if (seen.has(t)) continue
+      seen.add(t)
+      t.push(parsedValue)
     }
     analyzeResourceFile(file);
 
-    if (options.stdout || outPath === undefined) {
-      console.log(file.toJSON());
-    } else {
-      fs.writeFileSync(outPath!, file.toJSON());
-    }
+    writeCliOutput(options, out, file)
     console.log(`Appended ${data.length} entries to file.`);
   });
 
 cli.help();
-cli.version('0.1.1');
+cli.version('0.1.2');
 
 try {
   cli.parse();
