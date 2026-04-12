@@ -428,9 +428,9 @@ export class ResourceFile implements Serializable {
    */
   static collectValidationErrors(header: ResourceHeader, resources: Resource[]): string[] {
     const errors: string[] = [];
-    if (resources.length === 0) {
-      errors.push(coreValidationMessages.noResourcesInFile);
-    }
+    // if (resources.length === 0) {
+    //   errors.push(coreValidationMessages.noResourcesInFile);
+    // }
     if (header.modifiers.find((modifier) => modifier.name === 'format') === undefined) {
       errors.push(coreValidationMessages.baseMissingFormatModifier);
     }
