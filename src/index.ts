@@ -90,9 +90,61 @@ function readCliInput(
   return { content, outPath, fromStdin };
 }
 
-function getValue(file: types.ResourceFile, query: string): any {
-  const data = JSONPath({ path: query, json: file, resultType: 'all' });
-  return data;
+interface JsonPathMatch {
+  path?: (string | number)[]
+  parent?: unknown
+  parentProperty?: string | number
+}
+
+/**
+ * Apply JSONPath matches in-place: remove array elements with `splice` (no `null` placeholders)
+ * and remove object properties with `delete`. Nested arrays are updated before ancestor arrays
+ * so indices stay meaningful; within one array, indices are removed high-to-low.
+ */
+function removeJsonPathMatches(matches: JsonPathMatch[]): void {
+  const arrayGroups = new Map<unknown[], { indices: Set<number>; maxDepth: number }>()
+  const objectDeletes: { parent: Record<PropertyKey, unknown>; key: PropertyKey }[] = []
+
+  for (const m of matches) {
+    if (m.parent == null || m.parentProperty === undefined) {
+      continue
+    }
+    const { parent } = m
+    const prop = m.parentProperty
+
+    if (Array.isArray(parent)) {
+      const idx = typeof prop === 'number' ? prop : Number(prop)
+      if (!Number.isInteger(idx) || idx < 0 || idx >= parent.length) {
+        continue
+      }
+      let g = arrayGroups.get(parent)
+      if (g === undefined) {
+        g = { indices: new Set(), maxDepth: 0 }
+        arrayGroups.set(parent, g)
+      }
+      g.indices.add(idx)
+      const depth = Array.isArray(m.path) ? m.path.length : 0
+      if (depth > g.maxDepth) {
+        g.maxDepth = depth
+      }
+    } else if (typeof parent === 'object') {
+      objectDeletes.push({ parent: parent as Record<PropertyKey, unknown>, key: prop as PropertyKey })
+    }
+  }
+
+  const sortedArrays = [...arrayGroups.entries()].sort((a, b) => b[1].maxDepth - a[1].maxDepth)
+
+  for (const [arr, { indices }] of sortedArrays) {
+    for (const i of [...indices].sort((x, y) => y - x)) {
+      if (i < arr.length) {
+        arr.splice(i, 1)
+      }
+    }
+  }
+
+  for (const { parent, key } of objectDeletes) {
+    delete parent[key]
+  }
 }
 
 const cli = cac();
@@ -171,9 +223,7 @@ cli.command('delete [path] <query>', 'Delete data from a resource file')
     }
 
     const data = JSONPath({ path: query, json: file, resultType: 'all' });
-    data.forEach((match: any) => {
-      delete match.parent[match.parentProperty]; 
-    });
+    removeJsonPathMatches(data)
     analyzeResourceFile(file);
 
     if (options.stdout || outPath === undefined) {
