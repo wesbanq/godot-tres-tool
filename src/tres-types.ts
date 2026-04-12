@@ -1,3 +1,4 @@
+import JSON5 from 'json5';
 import { z } from 'zod';
 import {
   coreValidationMessages,
@@ -6,6 +7,8 @@ import {
   ErrorCode,
   type Issue,
   IssueSeverity,
+  formatZodError,
+  zodParseErrorMessage,
 } from './errors';
 
 /** Literal values accepted in `[...]` header type position (single source for Zod + sets). */
@@ -85,17 +88,6 @@ export const propertyValueSchema: z.ZodType<PropertyValue> = z.lazy(() =>
   ])
 );
 
-/** Flatten a Zod error into a single human-readable line (paths + messages). */
-export function formatZodError(err: z.ZodError): string {
-  return err.issues
-    .map((i) => (i.path.length > 0 ? `${i.path.join('.')}: ` : '') + i.message)
-    .join('; ');
-}
-
-function zodParseErrorMessage(err: z.ZodError): string {
-  return formatZodError(err);
-}
-
 /**
  * Godot root `format=` on `gd_resource`: integer in range 1–3.
  * Accepts the modifier string or number as stored on {@link ResourceTypeModifier}.
@@ -153,7 +145,7 @@ export interface Serializable {
 }
 
 function parseJson(raw: string | unknown): unknown {
-  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  return typeof raw === 'string' ? JSON5.parse(raw) : raw;
 }
 
 function resourceFromParsed(data: ResourceJSON): Resource {
@@ -179,7 +171,7 @@ export class ResourceTypeModifier implements Serializable {
   static fromJSON(raw: string | unknown): ResourceTypeModifier {
     const parsed = resourceTypeModifierSchema.safeParse(parseJson(raw));
     if (!parsed.success) {
-      throw new Error(`Invalid ResourceTypeModifier in JSON. ${zodParseErrorMessage(parsed.error)}`);
+      throw new Error(`Invalid ResourceTypeModifier in JSON. ${formatZodError(parsed.error)}`);
     }
     const { name, value } = parsed.data;
     return new ResourceTypeModifier(name, value);
@@ -192,7 +184,7 @@ export class ResourceTypeModifier implements Serializable {
   validate(): Issue[] {
     const r = resourceTypeModifierSchema.safeParse({ name: this.name, value: this.value });
     if (!r.success) {
-      return [createIssue(ErrorCode.SchemaValidationFailed, formatZodError(r.error))];
+      return [createIssue(ErrorCode.SchemaValidationFailed, formatZodError(r.error as z.ZodError))];
     }
     return [];
   }
@@ -266,10 +258,14 @@ export class ResourceHeader implements Serializable {
 
   validate(): Issue[] {
     const issues: Issue[] = [];
-    if (this.type.length === 0) {
+    if (this.type === undefined) {
       issues.push(createIssue(ErrorCode.ResourceHeaderTypeEmpty));
-    } else if (!resourceTypeSchema.safeParse(this.type).success) {
-      issues.push(createIssue(ErrorCode.UnknownResourceHeaderType, this.type));
+    } else {
+      if (this.type.length === 0) {
+        issues.push(createIssue(ErrorCode.ResourceHeaderTypeEmpty));
+      } else if (!resourceTypeSchema.safeParse(this.type).success) {
+        issues.push(createIssue(ErrorCode.UnknownResourceHeaderType, this.type));
+      }
     }
     for (const mod of this.modifiers) {
       issues.push(...mod.validate());
@@ -411,7 +407,7 @@ export class ResourceFile implements Serializable {
   }
 
   toJSON(minified: boolean = false): string {
-    return JSON.stringify(
+    return JSON5.stringify(
       {
         header: this.header,
         resources: this.resources,

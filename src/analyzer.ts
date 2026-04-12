@@ -4,6 +4,7 @@ import {
   coreValidationMessages,
   createIssue,
   ErrorCode,
+  formatZodError,
   IssueSeverity,
   issueSchema,
   type Issue,
@@ -69,7 +70,7 @@ function analyzeRootHeaderFormat(header: types.ResourceHeader, settings: Analyze
   }
   const parsed = types.godotResourceFormatSchema.safeParse(formatMod.value)
   if (!parsed.success) {
-    issues.push(createIssue(ErrorCode.SchemaValidationFailed, types.formatZodError(parsed.error)))
+    issues.push(createIssue(ErrorCode.SchemaValidationFailed, formatZodError(parsed.error)))
   }
   return issues
 }

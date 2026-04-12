@@ -5,6 +5,7 @@ import {
   IssueSeverity,
   parseErrorText,
   throwParseError,
+  formatZodError,
   type ParseLineContext,
 } from './errors'
 import * as types from './tres-types'
@@ -185,7 +186,7 @@ export function parseResourceHeader(line: string, context?: ParseLineContext): t
   const rawHeader = { type: things[0][0], modifiers }
   const parsed = types.resourceHeaderSchema.safeParse(rawHeader)
   if (!parsed.success) {
-    throwParseError(ErrorCode.SchemaValidationFailed, context, types.formatZodError(parsed.error))
+    throwParseError(ErrorCode.SchemaValidationFailed, context, formatZodError(parsed.error))
   }
 
   return new types.ResourceHeader(
@@ -235,7 +236,7 @@ export function parsePropertyValue(rhs: string, context?: ParseLineContext): typ
 
   const validated = types.propertyValueSchema.safeParse(value)
   if (!validated.success) {
-    throwParseError(ErrorCode.SchemaValidationFailed, context, types.formatZodError(validated.error))
+    throwParseError(ErrorCode.SchemaValidationFailed, context, formatZodError(validated.error))
   }
   return validated.data
 }
@@ -635,7 +636,7 @@ export function parseResourceProperty(line: string, context?: ParseLineContext):
 
   const parsed = types.resourcePropertySchema.safeParse({ name, value })
   if (!parsed.success) {
-    throwParseError(ErrorCode.SchemaValidationFailed, context, types.formatZodError(parsed.error))
+    throwParseError(ErrorCode.SchemaValidationFailed, context, formatZodError(parsed.error))
   }
 
   return new types.ResourceProperty(parsed.data.name, parsed.data.value)

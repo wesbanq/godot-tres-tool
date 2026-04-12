@@ -8,6 +8,18 @@ import { z, ZodError } from 'zod';
 import * as parser from './parser';
 import * as serializer from './serializer';
 import * as types from './tres-types';
+import { JSONPath } from 'jsonpath-plus';
+import { formatZodError, zodParseErrorMessage, IssueSeverity } from './errors';
+import * as analyzer from './analyzer';
+import JSON5 from 'json5';
+import * as yaml from 'js-yaml';
+
+function analyzeResourceFile(file: types.ResourceFile): void {
+  const issues = analyzer.analyzeResourceFile(file);
+  if (issues.some((i) => i.severity >= IssueSeverity.Error)) {
+    throw new parser.ParseAggregateError(issues.map((i) => i.message));
+  }
+}
 
 const existingFilePathSchema = z
   .string()
@@ -18,9 +30,6 @@ const existingFilePathSchema = z
 function validatePath(filePath: string): void {
   existingFilePathSchema.parse(filePath);
 }
-
-/** Logical basename for {@link resolveConvertedOutputPath} when input is stdin. */
-const STDIN_LOGICAL_PATH = 'stdin';
 
 function readStdinUtf8Sync(): string {
   return fs.readFileSync(0, 'utf8');
@@ -72,7 +81,7 @@ function readCliInput(
     if (outputOpt === undefined || outputOpt === '') {
       outPath = undefined;
     } else {
-      outPath = resolveConvertedOutputPath(STDIN_LOGICAL_PATH, outputOpt, outputExt);
+      outPath = resolveConvertedOutputPath('stdin', outputOpt, outputExt);
     }
   } else {
     outPath = resolveConvertedOutputPath(path!, outputOpt, outputExt);
@@ -81,13 +90,18 @@ function readCliInput(
   return { content, outPath, fromStdin };
 }
 
+function getValue(file: types.ResourceFile, query: string): any {
+  const data = JSONPath({ path: query, json: file, resultType: 'all' });
+  return data;
+}
+
 const cli = cac();
 
 cli.option('-d, --debug', 'Show debug information', { default: false });
+cli.option('-s, --stdout', 'Output to stdout', { default: false });
 
 cli.command('json [path]', 'Convert a .tres file to a JSON file (stdin if path omitted)')
   .option('-m, --minified', 'Minify the output')
-  .option('-s, --stdout', 'Output to stdout')
   .option('-o, --output <path>', 'Output to a specific path')
   .action((path: string | undefined, options) => {
     const { content, outPath } = readCliInput(path, options.output, '.json');
@@ -102,7 +116,6 @@ cli.command('json [path]', 'Convert a .tres file to a JSON file (stdin if path o
   });
 
 cli.command('tres [path]', 'Convert a JSON file to a .tres file (stdin if path omitted)')
-  .option('-s, --stdout', 'Output to stdout')
   .option('-o, --output <path>', 'Output to a specific path')
   .action((path: string | undefined, options) => {
     const { content, outPath } = readCliInput(path, options.output, '.tres');
@@ -122,8 +135,125 @@ cli.command('tres [path]', 'Convert a JSON file to a .tres file (stdin if path o
     }
   });
 
-cli.help()
-cli.version('0.1.0')
+cli.command('get [path] <query>', 'Get data from a resource file')
+  .action((path: string | undefined, query: string, options) => {
+    const isJSON = path === undefined || path.endsWith('.json');
+
+    if (isJSON) {
+      const { content } = readCliInput(path, undefined, '');
+      const file = JSON5.parse(content);
+      const data = JSONPath({ path: query, json: file });
+      console.log(JSON5.stringify(data, null, 2));
+    } else {
+      const { content } = readCliInput(path, undefined, '');
+      const file = parser.parseResourceContentStrict(content);
+      const data = JSONPath({ path: query, json: file });
+      console.log(JSON5.stringify(data, null, 2));
+    }
+  });
+
+cli.command('delete [path] <query>', 'Delete data from a resource file')
+  .action((path: string | undefined, query: string, options) => {
+    const isJSON = path === undefined || path.endsWith('.json');
+
+    let outPath: string | undefined;
+    let file: types.ResourceFile;
+    if (isJSON) {
+      const { content, outPath: outPath } = readCliInput(path, undefined, '.json');
+      const parsed = types.resourceFileSchema.safeParse(JSON5.parse(content));
+      if (!parsed.success) {
+        zodParseErrorMessage(parsed.error);
+      }
+      file = parsed.data as types.ResourceFile;
+    } else {
+      const { content, outPath: outPath } = readCliInput(path, undefined, '.tres');
+      file = parser.parseResourceContentStrict(content);
+    }
+
+    const data = JSONPath({ path: query, json: file, resultType: 'all' });
+    data.forEach((match: any) => {
+      delete match.parent[match.parentProperty]; 
+    });
+    analyzeResourceFile(file);
+
+    if (options.stdout || outPath === undefined) {
+      console.log(file.toJSON());
+    } else {
+      fs.writeFileSync(outPath!, file.toJSON());
+    }
+    console.log(`Deleted ${data.length} entries from file.`);
+  });
+
+cli.command('set [path] <query> <value>', 'Set data in a resource file')
+  .action((path: string | undefined, query: string, value: string, options) => {
+    const isJSON = path === undefined || path.endsWith('.json');
+    const parsedValue = yaml.load(value);
+
+    let outPath: string | undefined;
+    let file: types.ResourceFile;
+    if (isJSON) {
+      const { content, outPath: outPath } = readCliInput(path, undefined, '.json');
+      const parsed = types.resourceFileSchema.safeParse(JSON5.parse(content));
+      if (!parsed.success) {
+        zodParseErrorMessage(parsed.error);
+      }
+      file = parsed.data as types.ResourceFile;
+    } else {
+      const { content, outPath: outPath } = readCliInput(path, undefined, '.tres');
+      file = parser.parseResourceContentStrict(content);
+    }
+
+    const data = JSONPath({ path: query, json: file, resultType: 'all' });
+    data.forEach((match: any) => {
+      match.parent[match.parentProperty] = parsedValue;
+    });
+    analyzeResourceFile(file);
+
+    if (options.stdout || outPath === undefined) {
+      console.log(file.toJSON());
+    } else {
+      fs.writeFileSync(outPath!, file.toJSON());
+    }
+    console.log(`Set ${data.length} entries in file.`);
+  });
+
+cli.command('append [path] <query> <value>', 'Append data to a resource file')
+  .action((path: string | undefined, query: string, value: string, options) => {
+    const isJSON = path === undefined || path.endsWith('.json');
+    const parsedValue = yaml.load(value);
+
+    let outPath: string | undefined;
+    let file: types.ResourceFile;
+    if (isJSON) {
+      const { content, outPath: outPath } = readCliInput(path, undefined, '.json');
+      const parsed = types.resourceFileSchema.safeParse(JSON5.parse(content));
+      if (!parsed.success) {
+        zodParseErrorMessage(parsed.error);
+      }
+      file = parsed.data as types.ResourceFile;
+    } else {
+      const { content, outPath: outPath } = readCliInput(path, undefined, '.tres');
+      file = parser.parseResourceContentStrict(content);
+    }
+
+    const data = JSONPath({ path: query, json: file });
+    if (data.length > 0) {
+      data[0].$append(value);
+    } else {
+      data.push(value);
+    }
+    analyzeResourceFile(file);
+
+    if (options.stdout || outPath === undefined) {
+      console.log(file.toJSON());
+    } else {
+      fs.writeFileSync(outPath!, file.toJSON());
+    }
+    console.log(`Appended ${data.length} entries to file.`);
+  });
+
+cli.help();
+cli.version('0.1.1');
 
 try {
   cli.parse();
@@ -132,7 +262,7 @@ try {
     throw e;
   }
   if (e instanceof ZodError) {
-    console.error(types.formatZodError(e));
+    console.error(formatZodError(e));
   } else if (e instanceof Error) {
     console.error(e.message);
   } else {

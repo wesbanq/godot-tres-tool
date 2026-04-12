@@ -47,6 +47,17 @@ export function formatParseLineContext(
   return parts.join('\n')
 }
 
+/** Flatten a Zod error into a single human-readable line (paths + messages). */
+export function formatZodError(err: z.ZodError): string {
+  return err.issues
+    .map((i) => (i.path.length > 0 ? `${i.path.join('.')}: ` : '') + i.message)
+    .join('; ');
+}
+
+export function zodParseErrorMessage(err: z.ZodError): string {
+  return formatZodError(err);
+}
+
 /** Messages emitted by `ResourceFile.collectValidationErrors` (single source of truth). */
 export const coreValidationMessages = {
   noResourcesInFile: 'No resources found in file.',
