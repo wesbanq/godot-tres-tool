@@ -42,11 +42,12 @@ function readStdinUtf8Sync(): string {
 function resolveConvertedOutputPath(
   inputPath: string,
   outputOpt: string | undefined,
-  outputExt: string
+  outputExt: string,
+  outSuffix: string = ''
 ): string {
   if (outputOpt === undefined || outputOpt === '') {
     const { dir, name } = path.parse(inputPath);
-    return path.join(dir, `${name}${outputExt}`);
+    return path.join(dir, `${name}${outSuffix}${outputExt}`);
   }
   const endsWithSep = /[/\\]$/.test(outputOpt);
   const stats = fs.existsSync(outputOpt) ? fs.statSync(outputOpt) : null;
@@ -54,7 +55,7 @@ function resolveConvertedOutputPath(
   if (isDirectory || endsWithSep) {
     const dir = outputOpt.replace(/[/\\]+$/, '') || outputOpt;
     const { name } = path.parse(inputPath);
-    return path.join(dir, `${name}${outputExt}`);
+    return path.join(dir, `${name}${outSuffix}${outputExt}`);
   }
   return outputOpt;
 }
@@ -67,7 +68,8 @@ function resolveConvertedOutputPath(
 function readCliInput(
   path: string | undefined,
   outputOpt: string | undefined,
-  outputExt: string
+  outputExt: string,
+  outSuffix: string = ''
 ): { content: string; outPath: string | undefined; fromStdin: boolean } {
   const fromStdin = path === undefined || path === '';
   if (!fromStdin) {
@@ -81,10 +83,10 @@ function readCliInput(
     if (outputOpt === undefined || outputOpt === '') {
       outPath = undefined;
     } else {
-      outPath = resolveConvertedOutputPath('stdin', outputOpt, outputExt);
+      outPath = resolveConvertedOutputPath('stdin', outputOpt, outputExt, outSuffix);
     }
   } else {
-    outPath = resolveConvertedOutputPath(path!, outputOpt, outputExt);
+    outPath = resolveConvertedOutputPath(path!, outputOpt, outputExt, outSuffix);
   }
 
   return { content, outPath, fromStdin };
@@ -183,7 +185,7 @@ cli.command('delete [path] <query>', 'Delete data from a resource file')
     let out: string | undefined;
     let file: types.ResourceFile;
     if (isJSON) {
-      const { content, outPath } = readCliInput(path, options.output, '.json');
+      const { content, outPath } = readCliInput(path, options.output, '.json', '_delete');
       out = outPath;
       const parsed = types.resourceFileSchema.safeParse(JSON5.parse(content));
       if (!parsed.success) {
@@ -191,7 +193,7 @@ cli.command('delete [path] <query>', 'Delete data from a resource file')
       }
       file = parsed.data as types.ResourceFile;
     } else {
-      const { content, outPath } = readCliInput(path, options.output, '.tres');
+      const { content, outPath } = readCliInput(path, options.output, '.tres', '_delete');
       out = outPath;
       file = parser.parseResourceContentStrict(content);
     }
@@ -221,7 +223,7 @@ cli.command('set [path] <query> <value>', 'Set data in a resource file')
     let out: string | undefined;
     let file: types.ResourceFile;
     if (isJSON) {
-      const { content, outPath } = readCliInput(path, options.output, '.json');
+      const { content, outPath } = readCliInput(path, options.output, '.json', '_set');
       out = outPath;
       const parsed = types.resourceFileSchema.safeParse(JSON5.parse(content));
       if (!parsed.success) {
@@ -229,7 +231,7 @@ cli.command('set [path] <query> <value>', 'Set data in a resource file')
       }
       file = parsed.data as types.ResourceFile;
     } else {
-      const { content, outPath } = readCliInput(path, options.output, '.tres');
+      const { content, outPath } = readCliInput(path, options.output, '.tres', '_set');
       out = outPath;
       file = parser.parseResourceContentStrict(content);
     }
@@ -252,7 +254,7 @@ cli.command('append [path] <query> <value>', 'Append data to a resource file')
     let out: string | undefined;
     let file: types.ResourceFile;
     if (isJSON) {
-      const { content, outPath } = readCliInput(path, options.output, '.json');
+      const { content, outPath } = readCliInput(path, options.output, '.json', '_append');
       out = outPath;
       const parsed = types.resourceFileSchema.safeParse(JSON5.parse(content));
       if (!parsed.success) {
@@ -260,7 +262,7 @@ cli.command('append [path] <query> <value>', 'Append data to a resource file')
       }
       file = parsed.data as types.ResourceFile;
     } else {
-      const { content, outPath } = readCliInput(path, options.output, '.tres');
+      const { content, outPath } = readCliInput(path, options.output, '.tres', '_append');
       out = outPath;
       file = parser.parseResourceContentStrict(content);
     }
