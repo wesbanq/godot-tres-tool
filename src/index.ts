@@ -4,6 +4,7 @@
 import cac from 'cac'
 import fs from 'fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z, ZodError } from 'zod';
 import * as parser from './parser';
 import * as serializer from './serializer';
@@ -13,6 +14,9 @@ import { formatZodError, zodParseErrorMessage, IssueSeverity } from './errors';
 import * as analyzer from './analyzer';
 import JSON5 from 'json5';
 import * as yaml from 'js-yaml';
+
+const packageJsonPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+const packageVersion = (JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as { version: string }).version;
 
 function analyzeResourceFile(file: types.ResourceFile): void {
   const issues = analyzer.analyzeResourceFile(file);
@@ -287,7 +291,7 @@ cli.command('append [path] <query> <value>', 'Append data to a resource file')
   });
 
 cli.help();
-cli.version('0.1.2');
+cli.version(packageVersion);
 
 try {
   cli.parse();

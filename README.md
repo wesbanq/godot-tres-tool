@@ -33,16 +33,16 @@ The `<value>` argument is parsed with **YAML** (via [js-yaml](https://github.com
 
 ## Usage
 
-From the repo root (the project uses [Bun](https://bun.sh) in scripts):
+From the repo root, use either **Node** (`npm run start` runs TypeScript via [tsx](https://github.com/privatenumber/tsx)) or **Bun**:
 
 ```bash
-bun run src/index.ts <command> [options]
+npm run start -- <command> [options]
 ```
 
 Or:
 
 ```bash
-npm run start -- <command> [options]
+bun run src/index.ts <command> [options]
 ```
 
 `npm run build` runs the TypeScript compiler with **no emit** (`noEmit: true` in `tsconfig.json`)—it typechecks the project only.

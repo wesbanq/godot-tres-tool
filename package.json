@@ -1,4 +1,9 @@
 {
+  "name": "godot-tres-tool",
+  "version": "0.1.2",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@types/js-yaml": "^4.0.9",
     "cac": "^7.0.0",
@@ -9,11 +14,12 @@
   },
   "devDependencies": {
     "@types/node": "^22.19.17",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
   "scripts": {
     "build": "tsc",
-    "start": "bun run src/index.ts",
-    "generate:schemas": "bun run scripts/generate-schemas.ts"
+    "start": "tsx src/index.ts",
+    "generate:schemas": "tsx scripts/generate-schemas.ts"
   }
 }
